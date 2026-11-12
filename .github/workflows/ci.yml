@@ -1,0 +1,41 @@
+name: CI
+run-name: "CI (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ['**/*.md']
+  pull_request:
+    branches: ["**"]
+    paths-ignore: ['**/*.md']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.1
+    with:
+      run-govulncheck: true
+      coverage-min: "85"
+      codecov-name: iec104ctl
+      go-versions: '["1.26", "1.27"]'
+      # Test the cmd packages as well (the shared default skips /cmd) and attribute
+      # coverage across the whole module, matching `make coverage`.
+      test-exclude-regex: "/example(s)?($|/)"
+      coverpkg: ./...
+      fuzz-time: 10s
+      policy-version: v1.4.2
+    secrets: inherit
+
+  # go-ci gates the total; this gates each package (COVER_PKG_MIN).
+  coverage-floor:
+    name: Per-package coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make coverage-pkg-check
