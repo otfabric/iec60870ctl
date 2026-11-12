@@ -49,6 +49,28 @@ Plain IEC 60870-5-104 carries no authentication and no encryption: anyone who ca
 - Keys are read from the files you name and are never written or printed. The association is kept in memory only: every run of `iec104ctl` associates anew
 - `--roles` on the simulated station applies to every controlling station alike; without it everything is permitted
 
+### The Serial Tools (iec101ctl, iec102ctl, iec103ctl)
+
+IEC 60870-5-101, -102 and -103 have no authentication and no encryption either, and the
+tools add none (go-iec60870-5 has no IEC 62351-5 for them): anyone on the line, or who can
+reach a terminal server's TCP port, can read and command the station.
+
+- **A serial line has one controlling station.** Connecting to a line in service, through a
+  terminal server or a splitter, competes with the control system: frame count bits and
+  polls get confused, and the station may answer you instead of it. In balanced mode both
+  ends send as primaries
+- **`server start`** serves one connection at a time on all interfaces (`--listen` to bind
+  one); on a serial port it answers whatever is on the line
+- **iec102ctl access keys** (REE profile) are passwords of the meter. Give them with
+  `--access-key-file` or the environment rather than `--access-key` on a shared machine:
+  a command line is visible to other users. They are never printed: the `--debug` frame
+  trace shows the login frame with the key hidden. On the line itself the key travels in
+  clear
+- **`iec103ctl client generic write`** changes settings of protection equipment, and
+  **`client command`** switches its functions (auto-recloser, teleprotection) on and off
+- A serial device (`serial:///dev/ttyUSB0`) needs the user to be allowed to open it (on
+  Linux the `dialout` group); no tool needs root
+
 ### Commands That Change a Station
 
 - **`client command`** operates switchgear and changes set points. On real equipment this opens and closes breakers, moves tap changers and changes what a plant does. Know what an address controls before sending to it. Everything is validated before anything is sent, and a command is sent exactly once (never retried)
@@ -80,4 +102,4 @@ Plain IEC 60870-5-104 carries no authentication and no encryption: anyone who ca
 
 ### Verifying Downloads
 
-Release archives are published with SHA-256 checksums. Verify them as shown in the [installation instructions](README.md#installation) before installing.
+Release archives are published with SHA-256 checksums. Verify them as shown in the [installation instructions](README.md#install) before installing.

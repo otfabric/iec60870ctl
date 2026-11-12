@@ -33,7 +33,7 @@ func WrapError(err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		return errs.New(errs.KindTimeout, errs.CodeRequestTimeout, fmt.Sprintf("timeout: no answer from the device: %v", err), err)
 	case errors.Is(err, iec103.ErrLinkDown):
-		return errs.New(errs.KindTransport, errs.CodeIEC103LinkDown, fmt.Sprintf("connection error: %v", err), err)
+		return errs.New(errs.KindTransport, errs.CodeLinkDown, fmt.Sprintf("connection error: %v", err), err)
 	case errors.Is(err, iec103.ErrClosed), errors.Is(err, link.ErrClosed):
 		return errs.New(errs.KindTransport, errs.CodeConnectionLost, fmt.Sprintf("connection error: %v", err), err)
 	case errors.Is(err, link.ErrTimeout):

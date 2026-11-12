@@ -18,11 +18,11 @@ iec101ctl, iec102ctl, iec103ctl and iec104ctl share one set of stable exit codes
 
 | `kind` | `code` values |
 |--------|---------------|
-| `usage`, `invalid_input` | `invalid_input`, `invalid_format`, `invalid_url`, `invalid_flag_combination`, `invalid_config`, `input_file_open_failed`, `output_file_create_failed` |
-| `transport` | `transport_connect_failed`, `transport_tls_failed`, `security_failed`, `connection_lost`, `listen_failed` |
-| `timeout` | `request_timeout` (no answer to a request), `link_timeout` (IEC 104 t1, or the FT 1.2 link: no acknowledgement) |
-| `negative_confirmation` | `negative_confirmation`, `unknown_type`, `unknown_cause`, `unknown_common_address`, `unknown_object_address` |
-| `protocol` | `protocol_violation`, `data_transfer_not_started`, `request_busy` |
+| `usage`, `invalid_input` | `invalid_input`, `invalid_format`, `invalid_url`, `invalid_flag_combination`, `invalid_config`, `input_file_open_failed`, `output_file_create_failed`, `profile_violation` (iec101ctl `--strict`: a request the IEC 101 profile does not allow; nothing was sent) |
+| `transport` | `transport_connect_failed`, `transport_tls_failed`, `security_failed`, `connection_lost`, `listen_failed`, `link_down` (IEC 101/103: a request while the FT 1.2 link is down, the station stopped answering it) |
+| `timeout` | `request_timeout` (no answer to a request), `link_timeout` (IEC 104 t1, or the FT 1.2 link: no acknowledgement), `link_init_failed` (IEC 101/102/103: request status of link and reset of remote link were not both answered in time), `no_identification` (iec103ctl: the device sent no identification after the reset of its link) |
+| `negative_confirmation` | `negative_confirmation`, `unknown_type`, `unknown_cause`, `unknown_common_address`, `unknown_object_address`; iec102ctl: `no_record` (cause 13), `unknown_record_number` (15), `unknown_record_address` (16), `no_object` (17), `no_period` (18), `login_refused` (REE access key refused); iec103ctl: `transfer_aborted` (the device aborted a disturbance data transfer) |
+| `protocol` | `protocol_violation`, `data_transfer_not_started`, `request_busy`, `link_refused` (IEC 101/102/103: the station's link layer answered NACK, data flow control or link service not functioning / not implemented) |
 | `output` | `json_encode_failed`, `table_render_failed`, `output_write_failed`, `output_file_write_failed`, `output_file_create_failed` |
 | `internal` | `internal_unexpected` |
 | `interrupted` | `context_canceled` |

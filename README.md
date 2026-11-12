@@ -89,7 +89,7 @@ iec101ctl client interrogate --url serial:///dev/ttyUSB0 --link-address 3 --ca 3
 
 # IEC 102: the totals of a simulated meter
 iec102ctl server start --port 2401
-iec102ctl client totals --url tcp://127.0.0.1:2401
+iec102ctl client totals --url tcp://127.0.0.1:2401 --oldest
 
 # IEC 103: general interrogation of a simulated protection device
 iec103ctl server start --port 2401
