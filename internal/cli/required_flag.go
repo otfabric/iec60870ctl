@@ -11,6 +11,6 @@ import (
 // MustMarkFlagRequired marks a flag required and panics if Cobra wiring is invalid (fail-fast at init).
 func MustMarkFlagRequired(cmd *cobra.Command, name string) {
 	if err := cmd.MarkFlagRequired(name); err != nil {
-		panic(fmt.Sprintf("iec104ctl: MarkFlagRequired(%q) on %q: %v", name, cmd.Name(), err))
+		panic(fmt.Sprintf("MarkFlagRequired(%q) on %q: %v", name, cmd.CommandPath(), err))
 	}
 }

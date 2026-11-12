@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/otfabric/iec104ctl/internal/errs"
-	"github.com/otfabric/iec104ctl/internal/format"
-	"github.com/otfabric/iec104ctl/internal/types"
+	"github.com/otfabric/iec60870ctl/internal/errs"
+	"github.com/otfabric/iec60870ctl/internal/format"
 )
 
 // RenderFatal renders a fatal error to stdout/stderr and returns the process exit code (no os.Exit).
@@ -44,7 +43,7 @@ func writeFatalText(w io.Writer, err error, debug bool) {
 }
 
 func writeFatalJSON(stdout, stderr io.Writer, err error, debug bool) error {
-	env := types.ErrorEnvelope{Error: errorInfoFromErr(err)}
+	env := errs.Envelope{Error: errorInfoFromErr(err)}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
@@ -62,7 +61,7 @@ func writeFatalJSON(stdout, stderr io.Writer, err error, debug bool) error {
 	return nil
 }
 
-func errorInfoFromErr(err error) types.ErrorInfo {
+func errorInfoFromErr(err error) errs.Info {
 	if e, ok := errs.As(err); ok {
 		msg := e.Message
 		if msg == "" && e.Cause != nil {
@@ -71,13 +70,13 @@ func errorInfoFromErr(err error) types.ErrorInfo {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return types.ErrorInfo{
+		return errs.Info{
 			Kind:    string(e.Kind),
 			Code:    e.Code,
 			Message: msg,
 		}
 	}
-	return types.ErrorInfo{
+	return errs.Info{
 		Kind:    string(errs.KindInternal),
 		Code:    errs.CodeInternalUnexpected,
 		Message: err.Error(),

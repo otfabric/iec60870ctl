@@ -5,8 +5,8 @@ package runner
 import (
 	"context"
 
-	"github.com/otfabric/iec104ctl/internal/errs"
-	"github.com/otfabric/iec104ctl/internal/format"
+	"github.com/otfabric/iec60870ctl/internal/errs"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/spf13/cobra"
 )
 

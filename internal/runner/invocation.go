@@ -5,7 +5,7 @@ package runner
 import (
 	"context"
 
-	"github.com/otfabric/iec104ctl/internal/format"
+	"github.com/otfabric/iec60870ctl/internal/format"
 )
 
 type invocationKey struct{}

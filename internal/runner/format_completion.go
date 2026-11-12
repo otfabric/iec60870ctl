@@ -3,8 +3,8 @@
 package runner
 
 import (
-	"github.com/otfabric/iec104ctl/internal/cli"
-	"github.com/otfabric/iec104ctl/internal/format"
+	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/spf13/cobra"
 )
 
