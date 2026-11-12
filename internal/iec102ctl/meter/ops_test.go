@@ -421,7 +421,7 @@ func hexOf(b []byte) []byte {
 }
 
 // lockedBuffer is a trace buffer read under the lock it is written under: the link's
-// writer goroutine of go-iec60870-5 can still trace a frame after the command returned.
+// goroutines write the trace (before go-iec60870-5 v0.5.0, even after Close returned).
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

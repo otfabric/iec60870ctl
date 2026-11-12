@@ -79,8 +79,8 @@ func (s *syncWriter) Write(b []byte) (int, error) {
 	return s.w.Write(b)
 }
 
-// String reads what was written under the same lock: the link's writer goroutine of
-// go-iec60870-5 can still trace a frame after the command returned.
+// String reads what was written under the same lock: the link's goroutines write the
+// trace (before go-iec60870-5 v0.5.0, even after Close returned).
 func (s *syncWriter) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
