@@ -5,6 +5,26 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.9.2
+
+**Date:** 2026-11-12
+**Previous release:** v0.9.1
+
+Built on go-iec60870-5 v0.5.2 (was v0.5.1) and go-serial v0.3.0 (was v0.2.1). No
+command, flag or output changes.
+
+### Changed
+
+- **go-serial v0.3.0** (iec101ctl, iec102ctl, iec103ctl): serial parameters are checked
+  before they are narrowed, so an out-of-range data-bits or stop-bits value is an error
+  instead of being truncated to a valid one, and an RS-485 RTS delay above 2^32-1 ms is
+  refused instead of wrapping around. go-serial now requires Go 1.26, as these tools
+  already did.
+- **go-iec60870-5 v0.5.2**: its interop suites moved to the images of
+  iec60870-5-interop v0.5.0; the library's code is unchanged.
+
+---
+
 ## v0.9.1
 
 **Date:** 2026-11-12
