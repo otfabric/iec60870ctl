@@ -33,6 +33,8 @@ ldflags = -ldflags "-s -w -X 'main.version=$(call tool_version,$(1))' -X 'main.t
 
 FUZZTIME ?= 10s
 CHAOS_SEEDS ?= 20
+# The interop suites to run; one tool: INTEROP_PKG=./interop/iec101ctl/...
+INTEROP_PKG ?= ./interop/...
 
 # docsync release of docs-check (DOC-008).
 DOCSYNC_VERSION := v0.3.1
@@ -133,7 +135,7 @@ e2e: build-nocheck ## Build the four tools and run the e2e suite against them an
 	@E2E_BIN_DIR=$(CURDIR)/$(BIN_DIR) go test -count=1 -tags=e2e ./e2e/...
 
 interop: build-nocheck ## Run the tools against the iec60870-5-interop v0.4.0 images (Docker; pinned by digest in interop/images.go; V=1 for -v)
-	@INTEROP_BIN_DIR=$(CURDIR)/$(BIN_DIR) go test -count=1 -tags=interop -timeout=40m $(if $(V),-v,) ./interop/...
+	@INTEROP_BIN_DIR=$(CURDIR)/$(BIN_DIR) go test -count=1 -tags=interop -timeout=40m $(if $(V),-v,) $(INTEROP_PKG)
 
 install: build-nocheck ## Install the four tools to /usr/local/bin
 	@$(foreach t,$(TOOLS),sudo install -m 0755 $(BIN_DIR)/$(t) /usr/local/bin/$(t) &&) true

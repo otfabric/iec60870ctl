@@ -18,24 +18,32 @@ jobs:
     uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.1
     with:
       run-govulncheck: true
-      coverage-min: "85"
-      codecov-name: iec104ctl
+      coverage-min: "90"
+      codecov-name: iec60870ctl
       go-versions: '["1.26", "1.27"]'
       # Test the cmd packages as well (the shared default skips /cmd) and attribute
       # coverage across the whole module, matching `make coverage`.
       test-exclude-regex: "/example(s)?($|/)"
       coverpkg: ./...
       fuzz-time: 10s
-      policy-version: v1.4.2
+      policy-version: v1.5.0
     secrets: inherit
 
-  # go-ci gates the total; this gates each package (COVER_PKG_MIN).
-  coverage-floor:
-    name: Per-package coverage
+  # go-ci gates the total; this gates each package (COVER_PKG_MIN), then runs the four
+  # built tools end to end against go-iec60870-5's own servers and clients, and the
+  # chaos and hostile-peer tests with more seeds.
+  tools:
+    name: Per-package coverage, e2e, chaos
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: make coverage-pkg-check
+      - name: Per-package coverage
+        run: make coverage-pkg-check
+      - name: e2e
+        run: make e2e
+      - name: Chaos and hostile peers
+        run: make chaos CHAOS_SEEDS=20

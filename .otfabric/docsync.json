@@ -1,10 +1,41 @@
 {
+  "exclude_docs": ["RELEASE.md", "docs/MIGRATION_AUDIT.md"],
   "clis": [
     {
-      "name": "iec104ctl",
-      "manifest": "./cmd",
+      "name": "iec101ctl",
+      "manifest": "./internal/iec101ctl/cmd",
       "exit_codes": "internal/errs",
-      "json_types": "internal/types"
+      "exit_doc": "docs/exitcodes.md",
+      "json_types": "internal/iec101ctl/types",
+      "json_doc": "docs/iec101ctl/json-output.md",
+      "docs": ["README.md", "docs/exitcodes.md", "docs/iec101ctl/**"]
+    },
+    {
+      "name": "iec102ctl",
+      "manifest": "./internal/iec102ctl/cmd",
+      "exit_codes": "internal/errs",
+      "exit_doc": "docs/exitcodes.md",
+      "json_types": "internal/iec102ctl/types",
+      "json_doc": "docs/iec102ctl/json-output.md",
+      "docs": ["README.md", "docs/exitcodes.md", "docs/iec102ctl/**"]
+    },
+    {
+      "name": "iec103ctl",
+      "manifest": "./internal/iec103ctl/cmd",
+      "exit_codes": "internal/errs",
+      "exit_doc": "docs/exitcodes.md",
+      "json_types": "internal/iec103ctl/types",
+      "json_doc": "docs/iec103ctl/json-output.md",
+      "docs": ["README.md", "docs/exitcodes.md", "docs/iec103ctl/**"]
+    },
+    {
+      "name": "iec104ctl",
+      "manifest": "./internal/iec104ctl/cmd",
+      "exit_codes": "internal/errs",
+      "exit_doc": "docs/exitcodes.md",
+      "json_types": "internal/iec104ctl/types",
+      "json_doc": "docs/iec104ctl/json-output.md",
+      "docs": ["README.md", "docs/exitcodes.md", "docs/iec104ctl/**"]
     }
   ]
 }

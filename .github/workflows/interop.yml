@@ -1,0 +1,44 @@
+name: Interop
+run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+# Runs each built tool against the reference implementations published by
+# otfabric/iec60870-5-interop v0.4.0, as client and as server. The images are pinned by
+# digest in interop/<tool>/ (the digests of the release's manifest.json, the same as
+# go-iec60870-5 v0.4.1); nothing of iec60870-5-interop is cloned or built here.
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ['**/*.md']
+  pull_request:
+    branches: ["**"]
+    paths-ignore: ['**/*.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # The full set of references runs here: a missing image or capability fails.
+  IEC101_REQUIRE_INTEROP: "1"
+  IEC102_REQUIRE_INTEROP: "1"
+  IEC103_REQUIRE_INTEROP: "1"
+  IEC104_REQUIRE_INTEROP: "1"
+
+jobs:
+  interop:
+    name: ${{ matrix.tool }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [iec101ctl, iec102ctl, iec103ctl, iec104ctl]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Interop suite
+        run: make interop V=1 INTEROP_PKG=./interop/${{ matrix.tool }}/...

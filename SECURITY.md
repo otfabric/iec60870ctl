@@ -2,15 +2,15 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in `iec104ctl`, please report it responsibly.
+If you discover a security vulnerability in iec101ctl, iec102ctl, iec103ctl or iec104ctl, please report it responsibly.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email **security@otfabric.io**, or open a private advisory on GitHub (the [Security](https://github.com/otfabric/iec104ctl/security) tab → **Advisories** → **Report a vulnerability**), with:
+Instead, please email **security@otfabric.io**, or open a private advisory on GitHub (the [Security](https://github.com/otfabric/iec60870ctl/security) tab → **Advisories** → **Report a vulnerability**), with:
 
 - A description of the vulnerability
 - Steps to reproduce the issue
-- The affected version(s) (`iec104ctl version` output)
+- The affected version(s) (`<tool> version` output)
 - Any potential impact you've identified
 
 We will acknowledge your report within 48 hours and aim to provide a fix or mitigation within 7 days for critical issues.
@@ -44,7 +44,7 @@ Plain IEC 60870-5-104 carries no authentication and no encryption: anyone who ca
 
 `--secure` runs the A-Profile of IEC 62351-5 as IEC TS 60870-5-7 maps it onto IEC 104, on the client and on the simulated station: a Station Association authenticated with certificates, then every ASDU as Secure Data with a MAC (or AES-256-GCM with `--dpa aes-256-gcm`) and a sequence number against replay. It can be combined with TLS.
 
-- The implementation is [go-iec104](https://github.com/otfabric/go-iec104)'s package `sec`. The normative documents are not public; it was derived from an open-source implementation and is tested for interoperability with it, but its conformance to the standards is not established independently. See the security notes of go-iec104
+- The implementation is [go-iec60870-5](https://github.com/otfabric/go-iec60870-5)'s package `sec`. The normative documents are not public; it was derived from an open-source implementation and is tested for interoperability with it, but its conformance to the standards is not established independently. See the security notes of go-iec60870-5
 - `--security-trust` decides who may associate. A CA certificate in it accepts **every** station certificate that CA signed; any other certificate is pinned by its fingerprint. Trust a CA only if it signs nothing but the stations you mean
 - Keys are read from the files you name and are never written or printed. The association is kept in memory only: every run of `iec104ctl` associates anew
 - `--roles` on the simulated station applies to every controlling station alike; without it everything is permitted

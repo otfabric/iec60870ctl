@@ -147,7 +147,7 @@ A delivered file appears in the directory and can be fetched back. A file delive
 |---------|--------|
 | General interrogation (`C_IC_NA_1`, QOI 20) | confirmation, every point except integrated totals, termination |
 | Group interrogation (QOI 21-36) | the points of that `group` |
-| Counter interrogation (`C_CI_NA_1`) | the integrated totals, general or of counter group 1-4. Freeze increments the sequence number; freeze with reset and reset set the counters to zero |
+| Counter interrogation (`C_CI_NA_1`) | the integrated totals, general or of counter group 1-4. Freeze increments the sequence number; freeze with reset and reset set the counters to zero. The station confirms a freeze and then sends the frozen totals, which iec104ctl's client does not wait for |
 | Read (`C_RD_NA_1`) | the point with cause "request", or "unknown information object address" |
 | Clock synchronization (`C_CS_NA_1`) | confirmed; the time tags of the station follow the new time |
 | Test command (`C_TS_TA_1`) | confirmed |

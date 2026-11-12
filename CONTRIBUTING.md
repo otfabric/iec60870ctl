@@ -1,14 +1,14 @@
-# Contributing to iec104ctl
+# Contributing to iec60870ctl
 
-Thank you for your interest in contributing to `iec104ctl`! This document covers the guidelines for contributing.
+Thank you for your interest in contributing to iec60870ctl (iec101ctl, iec102ctl, iec103ctl, iec104ctl)! This document covers the guidelines for contributing.
 
 ## Getting Started
 
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```sh
-   git clone git@github.com:<your-username>/iec104ctl.git
-   cd iec104ctl
+   git clone git@github.com:<your-username>/iec60870ctl.git
+   cd iec60870ctl
    ```
 3. Create a feature branch:
    ```sh
@@ -32,10 +32,10 @@ make check
 # Run tests with the race detector
 make test
 
-# Run tests with whole-module coverage (fails below 85%)
+# Run tests with whole-module coverage (fails below 90 %, total and per package)
 make coverage
 
-# Build for the current platform (./bin/iec104ctl); runs `make check` first
+# Build the four tools for the current platform (./bin/<tool>); runs `make check` first
 make build
 ```
 
@@ -73,12 +73,12 @@ Examples:
 ### Testing
 
 - Add tests for new functionality in the appropriate `_test.go` file
-- Use [`internal/stationtest`](internal/stationtest) for anything that talks to a station. It serves the simulated station of `iec104ctl server` on a free loopback port, records the events the station logs, and makes throw-away certificates for TLS tests. Command tests run the real command tree through `cmd.Run` and assert on stdout, stderr and the exit code
+- Use the tool's `stationtest` package (for iec104ctl [`internal/iec104ctl/stationtest`](internal/iec104ctl/stationtest)) for anything that talks to a station. It serves the simulated station of `<tool> server` on a free loopback port, records the events the station logs, and makes throw-away certificates for TLS tests. Command tests run the real command tree through `cmd.Run` and assert on stdout, stderr and the exit code
 - Assert behaviour (output, exit code, device state), not just that the code ran
 - Tests must not write files into the repository: use `t.TempDir()`
 - Do not assume timing a station does not promise: wait for an event with a deadline instead of sleeping
 - Keep tests fast and race-clean; CI runs them with `-race` and a 120 s per-package timeout
-- Whole-module statement coverage must stay at or above 85% (`make coverage`)
+- Whole-module statement coverage must stay at or above 90 %, in total and in every package (`make coverage-pkg-check`)
 - If your change affects what goes on the wire, verify against a real station or another stack when possible, and say in the pull request what you tested against
 
 ### Documentation
@@ -106,7 +106,7 @@ For larger changes, please open an issue first to discuss the approach.
 ## Reporting Issues
 
 - Use GitHub Issues to report bugs or suggest features
-- Include the output of `iec104ctl version` in bug reports
+- Include the output of `<tool> version` in bug reports
 - Provide the exact command that triggered the issue, along with the error output; `--debug` adds every frame sent and received
 - Mention the station type and vendor, and whether it sits behind a gateway (the ASDU field sizes matter)
 - Report security vulnerabilities privately: see [SECURITY.md](SECURITY.md)
@@ -132,4 +132,4 @@ docs/                  Exit codes, JSON output contract, station model reference
 
 ## License
 
-By contributing to `iec104ctl`, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to iec60870ctl (iec101ctl, iec102ctl, iec103ctl, iec104ctl), you agree that your contributions will be licensed under the [MIT License](LICENSE).

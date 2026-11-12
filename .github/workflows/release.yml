@@ -1,31 +1,188 @@
 name: Release
 
-run-name: Release (${{ inputs.bump }}) from ${{ github.ref_name }}
+run-name: Release ${{ inputs.tool }} (${{ inputs.bump }}) from ${{ github.ref_name }}
+
+# One workflow for the four tools, for either versioning scheme (docs/RELEASING.md):
+#
+#   tool = iec101ctl | iec102ctl | iec103ctl | iec104ctl
+#       independent versions: the tag is <tool>/vX.Y.Z, the next version follows the
+#       newest <tool>/v* tag, and the release carries that tool's assets only.
+#   tool = all
+#       one shared version: the tag is vX.Y.Z, the next version follows the newest v* tag,
+#       and the release carries the assets of all four tools.
+#
+# The release notes are the section of RELEASE.md whose heading is exactly "## <tag>"
+# ("## iec104ctl/v1.2.3" or "## v1.2.3"), up to the line "---"; without one the release
+# stops before tagging. Assets are named as go-binary-release.yml names them
+# (<tool>-<version>-<os>-<arch>.tar.gz / .zip, <tool>-<version>-checksums.txt), so the
+# otfabric installer finds them.
 
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: Version bump type
+      tool:
+        description: Tool to release (all = one shared version for the four)
         required: true
         type: choice
-        options:
-          - none
-          - patch
-          - minor
-          - major
+        options: [iec101ctl, iec102ctl, iec103ctl, iec104ctl, all]
+      bump:
+        description: Version bump (none rebuilds the assets of the newest tag)
+        required: true
+        type: choice
+        options: [patch, minor, major, none]
         default: patch
 
 permissions:
   contents: write
 
 jobs:
-  release-iec104ctl-binary:
-    uses: otfabric/.github/.github/workflows/go-binary-release.yml@v3.6.0
-    with:
-      bump: ${{ inputs.bump }}
-      binary-name: iec104ctl
-      main-path: ./
-      ldflags: "-s -w -X main.version=${VERSION} -X main.tag=${TAG} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
-      run-tests: true
-    secrets: inherit
+  prepare:
+    name: Version and notes
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      tools: ${{ steps.version.outputs.tools }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Compute the tag
+        id: version
+        env:
+          TOOL: ${{ inputs.tool }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          if [ "$TOOL" = all ]; then prefix=""; tools="iec101ctl iec102ctl iec103ctl iec104ctl"
+          else prefix="$TOOL/"; tools="$TOOL"; fi
+          latest=$(git tag -l "${prefix}v[0-9]*.[0-9]*.[0-9]*" | grep -E "^${prefix}v[0-9]+\.[0-9]+\.[0-9]+$" | sed "s#^${prefix}v##" | sort -V | tail -n1 || true)
+          if [ "$BUMP" = none ]; then
+            [ -n "$latest" ] || { echo "::error::bump=none needs an existing ${prefix}v* tag"; exit 1; }
+            version=$latest
+          else
+            IFS=. read -r major minor patch <<<"${latest:-0.0.0}"
+            case $BUMP in
+              major) version="$((major + 1)).0.0" ;;
+              minor) version="$major.$((minor + 1)).0" ;;
+              patch) version="$major.$minor.$((patch + 1))" ;;
+            esac
+            if git rev-parse -q --verify "refs/tags/${prefix}v$version" >/dev/null; then
+              echo "::error::tag ${prefix}v$version exists"; exit 1
+            fi
+          fi
+          tag="${prefix}v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tools=$tools" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tools as $tag (previous: ${latest:-none})"
+      - name: Release notes from RELEASE.md
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          awk -v h="## $TAG" '$0 == h { on = 1; next } on && $0 == "---" { exit } on' RELEASE.md > notes.md
+          [ -s notes.md ] || { echo "::error::RELEASE.md has no section '## $TAG'"; exit 1; }
+          cat notes.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: notes
+          path: notes.md
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 -race ./...
+
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    needs: [prepare, test]
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [linux/amd64, linux/arm64, linux/arm/v7, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve Go version
+        id: go
+        run: echo "version=$(sed -nE 's/^go ([0-9]+\.[0-9]+).*/\1/p' go.mod | head -n1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          check-latest: true
+      - name: Build and package
+        env:
+          TOOLS: ${{ needs.prepare.outputs.tools }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          COMMIT: ${{ github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          mkdir -p build dist
+          for tool in $TOOLS; do
+            ./scripts/cross-build.sh "$tool" "$VERSION" \
+              "-ldflags \"-s -w -X main.version=$VERSION -X main.tag=$TAG -X main.commit=$COMMIT -X main.buildDate=$build_date\"" \
+              "$TARGET" build
+          done
+          ./scripts/package.sh build
+          mv build/*.tar.gz build/*.zip dist/ 2>/dev/null || true
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ strategy.job-index }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+      - name: Checksums per tool
+        env:
+          TOOLS: ${{ needs.prepare.outputs.tools }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} out/ \;
+          cd out
+          for tool in $TOOLS; do
+            sha256sum "$tool-$VERSION"-*.tar.gz "$tool-$VERSION"-*.zip > "$tool-$VERSION-checksums.txt"
+            cat "$tool-$VERSION-checksums.txt"
+          done
+      - name: Tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$BUMP" != none ]; then
+            git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file artifacts/notes/notes.md
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file artifacts/notes/notes.md out/*
+          fi
