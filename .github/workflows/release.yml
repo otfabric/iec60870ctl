@@ -10,6 +10,9 @@ run-name: Release (${{ inputs.version || inputs.bump }}) from ${{ github.ref_nam
 # to the line "---"; without one the release stops before tagging. Assets are named as
 # go-binary-release.yml names them (<tool>-<version>-<os>-<arch>.tar.gz / .zip,
 # <tool>-<version>-checksums.txt), so the otfabric installer finds them.
+#
+# For otfabric/install (org scan): the binaries this workflow releases.
+# binary-names: iec101ctl iec102ctl iec103ctl iec104ctl
 
 on:
   workflow_dispatch:
