@@ -13,13 +13,13 @@ import (
 	"strings"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
-	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/format"
+	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
-	"github.com/otfabric/iec60870ctl/internal/runner"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/station"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
+	"github.com/otfabric/iec60870ctl/internal/runner"
 	"github.com/spf13/cobra"
 )
 

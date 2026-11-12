@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/otfabric/go-iec60870-5/iec104/apci"
 	"github.com/otfabric/go-iec60870-5/asdu"
+	"github.com/otfabric/go-iec60870-5/iec104/apci"
 	"github.com/otfabric/go-iec60870-5/iec104/client"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/station"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/stationtest"

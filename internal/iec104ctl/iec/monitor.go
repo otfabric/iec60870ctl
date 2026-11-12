@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	iec104 "github.com/otfabric/go-iec60870-5/iec104"
 	"github.com/otfabric/go-iec60870-5/asdu"
+	iec104 "github.com/otfabric/go-iec60870-5/iec104"
 	"github.com/otfabric/go-iec60870-5/iec104/client"
-	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/errs"
+	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
 )
 

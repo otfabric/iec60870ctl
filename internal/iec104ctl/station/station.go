@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/otfabric/go-iec60870-5/asdu"
 	iec104 "github.com/otfabric/go-iec60870-5/iec104"
 	"github.com/otfabric/go-iec60870-5/iec104/apci"
-	"github.com/otfabric/go-iec60870-5/asdu"
 	"github.com/otfabric/go-iec60870-5/iec104/server"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"

@@ -12,13 +12,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/otfabric/iec60870ctl/internal/buildinfo"
+	clihelp "github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/cmd/client"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/cmd/discover"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/cmd/server"
-	"github.com/otfabric/iec60870ctl/internal/buildinfo"
-	clihelp "github.com/otfabric/iec60870ctl/internal/cli"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
-	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/runner"
 	"github.com/spf13/cobra"
 )

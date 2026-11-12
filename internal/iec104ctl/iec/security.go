@@ -16,8 +16,8 @@ import (
 
 	"github.com/otfabric/go-iec60870-5/asdu"
 	"github.com/otfabric/go-iec60870-5/sec"
-	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/errs"
+	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 )
 
 // Security is the application-layer security of IEC 62351-5 (the A-Profile of

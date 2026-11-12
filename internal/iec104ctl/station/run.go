@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/errs"
+	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
 )
