@@ -27,8 +27,16 @@ each reference can be overridden with `IEC10x_INTEROP_<NAME>_IMAGE`.
 | iec103ctl | vitusdong/iec103-dotnet | vitusdong, ARIEC103, Open103, go-iecp5 cs103 |
 
 Known upstream bugs are listed by the harness (`known-bugs*.tsv`) and skipped or reported
-as known, never counted as passes. The results of the last local run are in each tool's
-guide ("tested with").
+as known, never counted as passes.
+
+Last full local run (2026-11-12, Docker on macOS arm64):
+
+| Tool | Pass | Skipped | Fail | Skips |
+|------|------|---------|------|-------|
+| iec101ctl | 399 (22 client scenarios, both link modes, default and four non-default field-size sets; 369 reference-client cases) | 5 | 0 | digitalpetri balanced station: known upstream bug, confirmed to reproduce before skipping |
+| iec102ctl | 18 (gisce against the simulated meter) | 0 | 0 | |
+| iec103ctl | 59 | 36 | 0 | known upstream bugs of vitusdong, ARIEC103 and Open103; features an image does not declare |
+| iec104ctl | 35 client subtests against 5 servers, 5 reference clients against the server | 1 | 0 | j60870 1.8.0 cannot decode C_RD_NA_1: known upstream bug |
 
 ## Writing tests
 
