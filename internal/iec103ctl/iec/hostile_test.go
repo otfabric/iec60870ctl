@@ -285,6 +285,12 @@ func TestChaosMonitorFlood(t *testing.T) {
 // typed error of the line.
 func TestChaosLossyLine(t *testing.T) {
 	st := stationtest.Start(t, stationtest.Model)
+	// What a clean line returns: a run that succeeds through the lossy one must return all
+	// of it, not a part.
+	clean, err := Interrogate(context.Background(), &config.InterrogateConfig{ConnConfig: conn("tcp://" + st.Addr)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for seed := range chaosSeeds(t) {
 		t.Run(strconv.Itoa(seed), func(t *testing.T) {
 			defer leakCheck(t)()
@@ -293,9 +299,12 @@ func TestChaosLossyLine(t *testing.T) {
 			c := conn("tcp://" + px.addr())
 			c.Timeout, c.LinkTimeout, c.Retries = 2000, 100, 3
 			start := time.Now()
-			_, err := Interrogate(context.Background(), &config.InterrogateConfig{ConnConfig: c}, nil)
+			res, err := Interrogate(context.Background(), &config.InterrogateConfig{ConnConfig: c}, nil)
 			if time.Since(start) > 10*time.Second {
 				t.Fatal("no end")
+			}
+			if err == nil && res.Count != clean.Count {
+				t.Fatalf("%d messages, a clean line gives %d", res.Count, clean.Count)
 			}
 			if err != nil {
 				switch k := kindOf(t, err); k {

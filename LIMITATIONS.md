@@ -25,6 +25,12 @@ go-iec60870-5's ([its LIMITATIONS.md](https://github.com/otfabric/go-iec60870-5/
 
 - The serial tools have no security: IEC 62351-5 is not wired into go-iec60870-5 for 101,
   102 or 103, and the standards carry none. See [SECURITY.md](SECURITY.md).
+- **The link time-out must exceed the slowest answer of the line.** FT 1.2 marks a request
+  with one bit (FCB): an answer that arrives after the link time-out is taken for the answer
+  to the next poll, and data the station sends meanwhile can be lost without an error
+  (IEC 60870-5-2). Over a terminal server, a radio or a modem, raise `--link-timeout`
+  above the worst round trip; the chaos tests run with a link time-out above their worst
+  injected delay for this reason.
 - A serial line has one controlling station: `server start` of the serial tools serves one
   connection at a time.
 - iec104ctl only: TLS, IEC 62351-5, file transfer and redundancy-related options; the serial

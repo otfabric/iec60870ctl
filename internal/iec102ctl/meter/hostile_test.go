@@ -331,6 +331,10 @@ func TestChaosLine(t *testing.T) {
 			p := newChaosProxy(t, s.Addr, uint64(seed))
 			c := config.TotalsConfig{ConnConfig: quick("tcp://" + p.l.Addr().String()).ConnConfig, Record: 11, First: 1, Last: 8, From: "2026-01-01", To: "2026-01-02"}
 			c.Timeout = 2000
+			// FT 1.2 cannot tell a late answer from the answer to the next poll (one FCB bit):
+			// the link time-out must exceed the worst delay of the line, 150 ms here, or an
+			// answer is taken for the next one and a period is lost (IEC 60870-5-2).
+			c.LinkTimeout = 400
 			start := time.Now()
 			r, err := meter.Totals(context.Background(), &c, nil)
 			if d := time.Since(start); d > 8*time.Second {
