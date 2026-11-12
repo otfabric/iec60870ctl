@@ -122,7 +122,7 @@ Every tool runs end to end against go-iec60870-5's own servers and clients (`mak
 | [TESTING.md](TESTING.md) | Unit, fuzz, chaos, e2e and interop tests |
 | [LIMITATIONS.md](LIMITATIONS.md) | What the tools do not do |
 | [docs/MIGRATION_AUDIT.md](docs/MIGRATION_AUDIT.md) | iec104ctl: what was kept and what changed in the move |
-| [docs/RELEASING.md](docs/RELEASING.md) | Release tooling: shared or per-tool versions |
+| [docs/RELEASING.md](docs/RELEASING.md) | Releases: one version for the four tools |
 | [SECURITY.md](SECURITY.md) | Reporting vulnerabilities, safe use |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup |
 | [RELEASE.md](RELEASE.md) | Release notes |

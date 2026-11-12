@@ -28,7 +28,7 @@ This repository follows **otfabric/engineering policy 1.5**, profile **cli** (`.
 | Commands and usage | docs/<tool>/usage.md, README.md |
 | How to contribute | CONTRIBUTING.md |
 | Protocol behaviour | go-iec60870-5 |
-| Release history | RELEASE.md (`## vX.Y.Z` or `## <tool>/vX.Y.Z` … `---`), docs/RELEASING.md |
+| Release history | RELEASE.md (`## vX.Y.Z` … `---`; one version for the four tools), docs/RELEASING.md |
 
 ## Hard rules
 

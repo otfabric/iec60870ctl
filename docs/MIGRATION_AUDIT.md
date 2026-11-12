@@ -58,8 +58,8 @@ Nothing else on stdout or stderr changed in the differential run.
 | Repository and module | `github.com/otfabric/iec104ctl`, main package at the root | `github.com/otfabric/iec60870ctl`, main package `cmd/iec104ctl` |
 | `go install` | `go install github.com/otfabric/iec104ctl@latest` | `go install github.com/otfabric/iec60870ctl/cmd/iec104ctl@latest` |
 | Library | go-iec104 v0.3.0 | go-iec60870-5 v0.4.1 (package map in go-iec60870-5 `docs/IEC104_PARITY.md`) |
-| Release | `go-binary-release.yml`, tags `vX.Y.Z` | the repository's own Release workflow: `iec104ctl/vX.Y.Z`, or `vX.Y.Z` for a release of all four tools (not decided; [RELEASING.md](RELEASING.md)). Asset names unchanged: `iec104ctl-<version>-<os>-<arch>.tar.gz`/`.zip`, `iec104ctl-<version>-checksums.txt` |
-| Version numbers | v0.8.0 was the last | the first release from here is not decided; it should not go below 0.9.0 if the per-tool scheme keeps the line of iec104ctl |
+| Release | `go-binary-release.yml`, tags `vX.Y.Z` | the repository's own Release workflow; tags `vX.Y.Z`, one version for the four tools ([RELEASING.md](RELEASING.md)). Asset names unchanged: `iec104ctl-<version>-<os>-<arch>.tar.gz`/`.zip`, `iec104ctl-<version>-checksums.txt` |
+| Version numbers | v0.8.0 was the last | v0.9.0 is the first release from here, for the four tools, continuing iec104ctl's line so installs upgrade |
 | Release notes | `RELEASE.md` | the old history in [iec104ctl/HISTORY.md](iec104ctl/HISTORY.md); new notes in [RELEASE.md](../RELEASE.md) |
 | Coverage gate | 85 % total, 85 % per package | 90 % total and per package |
 | Engineering policy | 1.4 | 1.5 |

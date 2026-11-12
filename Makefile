@@ -20,10 +20,9 @@ BIN_DIR   := bin
 ARCHS     := linux/amd64 linux/arm64 linux/arm/v7 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 RELEASE_DIR := release
 
-# Version of a tool: the tag on HEAD, either the tool's own (<tool>/vX.Y.Z) or a shared one
-# (vX.Y.Z), the tool's own winning; any other build reports "dev". VERSION has no leading v,
-# as the release workflow passes it. See docs/RELEASING.md.
-tool_tag = $(shell git tag --points-at HEAD 2>/dev/null | grep -E '^$(1)/v[0-9]' | sort -V | tail -n1 | grep . || git tag --points-at HEAD 2>/dev/null | grep -E '^v[0-9]' | sort -V | tail -n1)
+# Version of the tools: the four share one, the tag vX.Y.Z on HEAD; any other build reports
+# "dev". VERSION has no leading v, as the release workflow passes it. See docs/RELEASING.md.
+tool_tag = $(shell git tag --points-at HEAD 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n1)
 tool_version = $(or $(patsubst v%,%,$(notdir $(call tool_tag,$(1)))),dev)
 # -dirty when the working tree has changes, as Go itself marks vcs.modified.
 DIRTY := $(shell [ -z "$$(git status --porcelain 2>/dev/null)" ] || echo -dirty)

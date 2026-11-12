@@ -1,36 +1,29 @@
 name: Release
 
-run-name: Release ${{ inputs.tool }} (${{ inputs.bump }}) from ${{ github.ref_name }}
+run-name: Release (${{ inputs.version || inputs.bump }}) from ${{ github.ref_name }}
 
-# One workflow for the four tools, for either versioning scheme (docs/RELEASING.md):
+# The four tools share one version (decided 2026-11-12, docs/RELEASING.md): the tag is
+# vX.Y.Z, the next version follows the newest v* tag (or is given with `version`), and the
+# release carries the assets of iec101ctl, iec102ctl, iec103ctl and iec104ctl.
 #
-#   tool = iec101ctl | iec102ctl | iec103ctl | iec104ctl
-#       independent versions: the tag is <tool>/vX.Y.Z, the next version follows the
-#       newest <tool>/v* tag, and the release carries that tool's assets only.
-#   tool = all
-#       one shared version: the tag is vX.Y.Z, the next version follows the newest v* tag,
-#       and the release carries the assets of all four tools.
-#
-# The release notes are the section of RELEASE.md whose heading is exactly "## <tag>"
-# ("## iec104ctl/v1.2.3" or "## v1.2.3"), up to the line "---"; without one the release
-# stops before tagging. Assets are named as go-binary-release.yml names them
-# (<tool>-<version>-<os>-<arch>.tar.gz / .zip, <tool>-<version>-checksums.txt), so the
-# otfabric installer finds them.
+# The release notes are the section of RELEASE.md whose heading is exactly "## vX.Y.Z", up
+# to the line "---"; without one the release stops before tagging. Assets are named as
+# go-binary-release.yml names them (<tool>-<version>-<os>-<arch>.tar.gz / .zip,
+# <tool>-<version>-checksums.txt), so the otfabric installer finds them.
 
 on:
   workflow_dispatch:
     inputs:
-      tool:
-        description: Tool to release (all = one shared version for the four)
-        required: true
-        type: choice
-        options: [iec101ctl, iec102ctl, iec103ctl, iec104ctl, all]
       bump:
         description: Version bump (none rebuilds the assets of the newest tag)
         required: true
         type: choice
         options: [patch, minor, major, none]
         default: patch
+      version:
+        description: Exact version X.Y.Z instead of a bump (for the first release, or to skip ahead)
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -51,15 +44,21 @@ jobs:
       - name: Compute the tag
         id: version
         env:
-          TOOL: ${{ inputs.tool }}
           BUMP: ${{ inputs.bump }}
+          WANT: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [ "$TOOL" = all ]; then prefix=""; tools="iec101ctl iec102ctl iec103ctl iec104ctl"
-          else prefix="$TOOL/"; tools="$TOOL"; fi
-          latest=$(git tag -l "${prefix}v[0-9]*.[0-9]*.[0-9]*" | grep -E "^${prefix}v[0-9]+\.[0-9]+\.[0-9]+$" | sed "s#^${prefix}v##" | sort -V | tail -n1 || true)
-          if [ "$BUMP" = none ]; then
-            [ -n "$latest" ] || { echo "::error::bump=none needs an existing ${prefix}v* tag"; exit 1; }
+          tools="iec101ctl iec102ctl iec103ctl iec104ctl"
+          latest=$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$" | sed "s#^v##" | sort -V | tail -n1 || true)
+          if [ -n "$WANT" ]; then
+            echo "$WANT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::version must be X.Y.Z"; exit 1; }
+            if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$WANT" | sort -V | tail -n1)" != "$WANT" ]; then
+              echo "::error::version $WANT is not above the newest tag v$latest"; exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/v$WANT" >/dev/null; then echo "::error::tag v$WANT exists"; exit 1; fi
+            version=$WANT
+          elif [ "$BUMP" = none ]; then
+            [ -n "$latest" ] || { echo "::error::bump=none needs an existing v* tag"; exit 1; }
             version=$latest
           else
             IFS=. read -r major minor patch <<<"${latest:-0.0.0}"
@@ -68,11 +67,11 @@ jobs:
               minor) version="$major.$((minor + 1)).0" ;;
               patch) version="$major.$minor.$((patch + 1))" ;;
             esac
-            if git rev-parse -q --verify "refs/tags/${prefix}v$version" >/dev/null; then
-              echo "::error::tag ${prefix}v$version exists"; exit 1
+            if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+              echo "::error::tag v$version exists"; exit 1
             fi
           fi
-          tag="${prefix}v$version"
+          tag="v$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tools=$tools" >> "$GITHUB_OUTPUT"
@@ -171,12 +170,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
-          BUMP: ${{ inputs.bump }}
+          NEW_TAG: ${{ inputs.version != '' || inputs.bump != 'none' }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ "$BUMP" != none ]; then
+          if [ "$NEW_TAG" = true ]; then
             git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$TAG"
           fi
