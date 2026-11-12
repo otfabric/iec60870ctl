@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,9 +52,9 @@ func TestInfoAndTime(t *testing.T) {
 	if err := meter.CheckInfo(&ic); err != nil {
 		t.Fatal(err)
 	}
-	var trace bytes.Buffer
+	trace := &lockedBuffer{}
 	ic.Debug = true
-	info, err := meter.Info(ctx(t), &ic, &trace)
+	info, err := meter.Info(ctx(t), &ic, trace)
 	if err != nil || info.Standard != 42 || info.Manufacturer != 33 || info.Product != 20261115 || info.Target != s.URL() {
 		t.Fatalf("info %+v %v", info, err)
 	}
@@ -417,4 +418,23 @@ func hexOf(b []byte) []byte {
 		out = append(out, digits[x>>4], digits[x&15])
 	}
 	return out
+}
+
+// lockedBuffer is a trace buffer read under the lock it is written under: the link's
+// writer goroutine of go-iec60870-5 can still trace a frame after the command returned.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

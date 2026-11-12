@@ -20,6 +20,10 @@ import (
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
 )
 
+// monitorDial is how Monitor connects; a test replaces it to order the connection after
+// the --count values.
+var monitorDial = Dial
+
 // MonitorSummary is printed to stderr when `client monitor` ends.
 type MonitorSummary struct {
 	Target     string
@@ -96,6 +100,7 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		cfg.CommonAddrHint = uint16(ca)
 	}
 
+	parent := ctx
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	if cfg.Duration != 0 {
@@ -179,9 +184,25 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		}))
 	}
 
-	s, err := Dial(ctx, &cfg.ConnConfig, status, opts...)
+	s, err := monitorDial(ctx, &cfg.ConnConfig, status, opts...)
 	if err != nil {
-		return sum, err
+		// A station that floods may deliver --count values before the connection is fully
+		// set up: the handler then stops ctx, and Dial fails only because of that. That is
+		// the end the user asked for, not an interruption.
+		mu.Lock()
+		reached := emitErr != nil || (cfg.Count != 0 && sum.Values >= int(cfg.Count))
+		eerr := emitErr
+		mu.Unlock()
+		if !reached || parent.Err() != nil {
+			return sum, err
+		}
+		if t, terr := cfg.ResolveTarget(); terr == nil {
+			sum.Target = t.String()
+		}
+		if eerr != nil {
+			return sum, errs.Output(errs.CodeOutputWriteFailed, eerr)
+		}
+		return sum, nil
 	}
 	sum.Target = s.Target.String()
 	begin := time.Now()

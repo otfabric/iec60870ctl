@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
+	"github.com/otfabric/go-iec60870-5/iec104/client"
 	"github.com/otfabric/go-iec60870-5/iec104/apci"
 	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
@@ -669,6 +670,54 @@ func TestHostileClockRefused(t *testing.T) {
 		return Clock(context.Background(), cfg, nil)
 	})
 	wantKind(t, err, errs.KindNegative)
+	r.close()
+	leaks()
+}
+
+// --count reached while the connection is still being set up (a station that floods right
+// after its STARTDT confirmation): Monitor's own stop then fails the connection set-up.
+// Monitor reports the values it was asked for and ends normally; it used to report the
+// stop it caused itself as "interrupted" (seen once in CI, Go 1.27, in
+// TestHostileMonitorCountFlood). The seam makes that order certain: the set-up completes,
+// then waits for the stop, and fails with it.
+func TestHostileMonitorCountBeforeDialReturns(t *testing.T) {
+	leaks := leakCheck(t)
+	r := startRogue(t, func(r *rogue, p *rawPeer) {
+		if !p.waitStarted(r) {
+			return
+		}
+		data := asdu.New(asdu.CauseSpontaneous, 1, asdu.MeasuredScaled{IOA: 100, Value: 7})
+		for !r.stopping() {
+			if p.send(data) != nil {
+				return
+			}
+		}
+	}, nil)
+	old := monitorDial
+	t.Cleanup(func() { monitorDial = old })
+	monitorDial = func(ctx context.Context, cfg *config.ConnConfig, trace io.Writer, extra ...client.Option) (*Session, error) {
+		s, err := old(ctx, cfg, trace, extra...)
+		if err != nil {
+			return nil, err
+		}
+		<-ctx.Done()
+		_ = s.Close()
+		return nil, WrapError(ctx.Err())
+	}
+	cfg := &config.MonitorConfig{ConnConfig: r.conn(time.Second), Count: 2, NoReconnect: true}
+	var emitted atomic.Int32
+	sum, err := within(t, 5*time.Second, "Monitor", func() (MonitorSummary, error) {
+		return Monitor(context.Background(), cfg, io.Discard, func(*types.Point) error { emitted.Add(1); return nil })
+	})
+	if err != nil || emitted.Load() != 2 || sum.Values != 2 || sum.Target == "" {
+		t.Fatalf("emitted %d, summary %+v, error %v", emitted.Load(), sum, err)
+	}
+	// An interruption from outside is still one.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Monitor(ctx, cfg, io.Discard, func(*types.Point) error { return nil }); err == nil {
+		t.Error("a cancelled caller context ended without an error")
+	}
 	r.close()
 	leaks()
 }

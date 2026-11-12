@@ -49,10 +49,10 @@ func codeOf(t *testing.T, err error) string {
 
 func TestInterrogate(t *testing.T) {
 	st := stationtest.Start(t, stationtest.Model)
-	var trace bytes.Buffer
+	trace := &syncWriter{w: &bytes.Buffer{}}
 	cfg := config.InterrogateConfig{ConnConfig: conn(st.URL())}
 	cfg.Debug = true
-	res, err := Interrogate(context.Background(), &cfg, &syncWriter{w: &trace})
+	res, err := Interrogate(context.Background(), &cfg, trace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,14 @@ func (s *syncWriter) Write(b []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.w.Write(b)
+}
+
+// String reads what was written under the same lock: the link's writer goroutine of
+// go-iec60870-5 can still trace a frame after the command returned.
+func (s *syncWriter) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.String()
 }
 
 func TestCommand(t *testing.T) {

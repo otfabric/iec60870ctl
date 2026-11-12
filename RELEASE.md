@@ -77,6 +77,10 @@ difference are recorded in [docs/MIGRATION_AUDIT.md](docs/MIGRATION_AUDIT.md).
     or test command with a negative mirror, cause 45.
   - The test sequence counter of `client ping --method command` starts at 0.
   - `version` names go-iec60870-5.
+- **Fixed:** `client monitor --count N` against a station that floods right after
+  STARTDT could reach N while the connection was still being set up and then report its
+  own stop as "interrupted" (exit 130) instead of ending normally; the race was in
+  iec104ctl v0.8.0 too.
 - Interop with lib60870-C, OpenMUC j60870, wendy512/iec104, cB-Sigma/iec60870 and
   pascaldekloe/part5 (iec60870-5-interop v0.4.0), both roles: 42 checks pass; the read
   against j60870 1.8.0 is a known upstream bug.

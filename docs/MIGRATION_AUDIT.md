@@ -100,6 +100,12 @@ transfer, `discover`, the hostile-peer and fuzz tests, and shell completion.
 
 ## Found on the way
 
+- A race older than the move: `client monitor --count N` against a station that floods
+  right after STARTDT could reach N before the connection set-up returned; Monitor's own
+  stop then failed the set-up, and the run ended "interrupted" (exit 130) instead of
+  normally. Seen once in CI (`TestHostileMonitorCountFlood`); fixed, with
+  `TestHostileMonitorCountBeforeDialReturns`, which fails on the old code.
+
 - go-iec60870-5 (as go-iec104 before it) applies `WithRequestTimeout` only to a context
   without a deadline. The process's context has none, so `--timeout` bounds every request;
   a caller that passes a context with a deadline gets that deadline instead. Documented

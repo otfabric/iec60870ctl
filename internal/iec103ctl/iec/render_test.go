@@ -135,9 +135,9 @@ func TestDisturbanceOf(t *testing.T) {
 func TestMonitor(t *testing.T) {
 	st := stationtest.Start(t, stationtest.Model)
 	cfg := config.MonitorConfig{ConnConfig: conn(st.URL()), Interrogate: true, Count: 20}
-	var stderr bytes.Buffer
+	stderr := &syncWriter{w: &bytes.Buffer{}}
 	var got []types.Message
-	sum, err := Monitor(context.Background(), &cfg, &syncWriter{w: &stderr}, func(m *types.Message) error {
+	sum, err := Monitor(context.Background(), &cfg, stderr, func(m *types.Message) error {
 		got = append(got, *m)
 		return nil
 	})
