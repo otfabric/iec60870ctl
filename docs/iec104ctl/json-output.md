@@ -15,7 +15,7 @@ These conventions are a **stable contract** for scripting. Field names are snake
 | Durations | `duration_ms`, `rtt_ms` (numbers, milliseconds with fractions) |
 | Repeated rows | `points`, `rows`, `steps`, `stations`, `entries`, `devices`: **arrays of objects**, empty arrays rather than null |
 | A row that failed | `error` object (`kind`, `code`, `message`); omitted when the row is fine |
-| Fatal error | one object `{"error": {"kind", "code", "message"}}` on stdout, nothing else; see [exitcodes.md](exitcodes.md) |
+| Fatal error | one object `{"error": {"kind", "code", "message"}}` on stdout, nothing else; see [exitcodes.md](../exitcodes.md) |
 
 ## Point
 

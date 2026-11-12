@@ -86,9 +86,9 @@ Examples:
 When you change commands, flags, output or exit codes, update:
 
 - The command's `Short` / `Long` / `Example` help text
-- [README.md](README.md), including the environment variable table for new flags
-- [docs/json-output.md](docs/json-output.md) and [docs/exitcodes.md](docs/exitcodes.md) — `--format json` and exit codes are a stable contract for scripts
-- [docs/server-config.md](docs/server-config.md) and the commented demo model in `internal/station/demo.go` when the station model changes
+- The tool's guide (`docs/<tool>/usage.md`), including the environment variable table for new flags
+- [docs/iec104ctl/json-output.md](docs/iec104ctl/json-output.md) (and the other tools') and [docs/exitcodes.md](docs/exitcodes.md) — `--format json` and exit codes are a stable contract for scripts
+- [docs/server-config.md](docs/iec104ctl/server-config.md) and the commented demo model of the tool (for iec104ctl `internal/iec104ctl/station/demo.go`) when the station model changes
 - [RELEASE.md](RELEASE.md), calling out anything that breaks existing usage
 
 ## Submitting Changes
