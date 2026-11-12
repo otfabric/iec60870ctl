@@ -1,6 +1,6 @@
 # iec102ctl limitations
 
-What iec102ctl does not do, and why. Most of it follows from go-iec60870-5 v0.4.1 (its LIMITATIONS.md and docs/iec102/INTEROPERABILITY.md) and from the sources that exist for IEC 102.
+What iec102ctl does not do, and why. Most of it follows from go-iec60870-5 v0.5.1 (its LIMITATIONS.md and docs/iec102/INTEROPERABILITY.md) and from the sources that exist for IEC 102.
 
 ## Sources and evidence
 

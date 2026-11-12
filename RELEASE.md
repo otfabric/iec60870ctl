@@ -5,6 +5,34 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.9.1
+
+**Date:** 2026-11-12
+**Previous release:** v0.9.0
+
+Built on go-iec60870-5 v0.5.1 (was v0.4.1). Fixes a silent loss of data on noisy
+serial lines in iec101ctl, iec102ctl and iec103ctl.
+
+### Fixed
+
+- **iec101ctl, iec102ctl, iec103ctl:** on a line that corrupts octets, a command could
+  succeed with part of its answer missing (seen: `client interrogate` of iec103ctl
+  returning 7 of 8 messages). After rejecting a corrupted frame, the FT 1.2 decoder of
+  go-iec60870-5 took an E5 octet inside that frame for a valid single-character answer,
+  so the station's next message was skipped. go-iec60870-5 v0.5.1 never resynchronizes
+  on the octets of a rejected frame. The chaos tests now check that a command which
+  succeeds returns everything a clean line returns.
+- **`--debug`:** no frame is traced after a command ended (go-iec60870-5 v0.5.0: a link
+  station's `Close` waits for its writer).
+- **iec103ctl:** a line that closes during the link start-up is reported by the library
+  (go-iec60870-5 v0.5.0: `WaitUp` returns the transport error); iec103ctl's own watch
+  of the line is gone. Errors and exit codes are unchanged (`connection_lost`, exit 4),
+  and a TCP line closed during the start-up is still opened again until `--timeout`.
+
+No command, flag, output format or exit code changed.
+
+---
+
 ## v0.9.0
 
 **Date:** 2026-11-12

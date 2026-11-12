@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/iec103"
@@ -67,8 +66,9 @@ type session struct {
 	c      *client.Client
 	target line.Target
 	cfg    *config.ConnConfig
-	// lost is closed when the line itself failed (the transport is gone).
-	lost chan struct{}
+	// lost is closed when the line itself failed (the transport is gone) or the
+	// controlling system was closed: the client's Done.
+	lost <-chan struct{}
 }
 
 // sessionOptions are what a command adds to the controlling system.
@@ -143,29 +143,6 @@ func open(ctx context.Context, cfg *config.ConnConfig, opts sessionOptions) (*se
 // errLineClosed reports a line that closed during the link start-up.
 var errLineClosed = errors.New("the line closed during the link start-up")
 
-// watchedLine signals the end of a line: the first failed read.
-type watchedLine struct {
-	io.ReadWriter
-	once sync.Once
-	lost chan struct{}
-}
-
-func (w *watchedLine) Read(b []byte) (int, error) {
-	n, err := w.ReadWriter.Read(b)
-	if err != nil {
-		w.once.Do(func() { close(w.lost) })
-	}
-	return n, err
-}
-
-// Close closes the line when it can be closed.
-func (w *watchedLine) Close() error {
-	if c, ok := w.ReadWriter.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
-}
-
 func openOnce(ctx context.Context, cfg *config.ConnConfig, t line.Target, opts sessionOptions) (*session, error) {
 	rw := opts.rw
 	if rw == nil {
@@ -176,8 +153,7 @@ func openOnce(ctx context.Context, cfg *config.ConnConfig, t line.Target, opts s
 		rw = conn
 	}
 	loc, _ := linecfg.Location(cfg.TimeZone)
-	w := &watchedLine{ReadWriter: rw, lost: make(chan struct{})}
-	s := &session{target: t, cfg: cfg, lost: w.lost}
+	s := &session{target: t, cfg: cfg}
 	ccfg := client.Config{
 		Link:           linkConfig(cfg, opts.trace),
 		LinkAddr:       uint8(cfg.LinkAddress & 0xFF),
@@ -191,12 +167,14 @@ func openOnce(ctx context.Context, cfg *config.ConnConfig, t line.Target, opts s
 		Handler:        opts.handler,
 		OnState:        opts.onState,
 	}
-	c, err := client.New(w, ccfg)
+	c, err := client.New(rw, ccfg)
 	if err != nil {
-		_ = w.Close()
+		if cl, ok := rw.(io.Closer); ok {
+			_ = cl.Close()
+		}
 		return nil, WrapError(err)
 	}
-	s.c = c
+	s.c, s.lost = c, c.Done()
 	if err := s.waitUp(ctx); err != nil {
 		_ = c.Close()
 		return nil, err
@@ -204,23 +182,21 @@ func openOnce(ctx context.Context, cfg *config.ConnConfig, t line.Target, opts s
 	return s, nil
 }
 
-// waitUp waits for the link start-up, or reports why it did not come.
+// waitUp waits for the link start-up, or reports why it did not come. go-iec60870-5
+// (v0.5.0) returns from WaitUp with the transport error when the line fails first.
 func (s *session) waitUp(ctx context.Context) error {
-	done := make(chan error, 1)
-	go func() { done <- s.c.WaitUp(ctx) }()
-	select {
-	case err := <-done:
-		if err == nil {
-			return nil
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			return errs.New(errs.KindTimeout, errs.CodeLinkTimeout,
-				fmt.Sprintf("timeout: the device at link address %d on %s did not answer the link start-up", s.cfg.LinkAddress, s.target), err)
-		}
-		return WrapError(err)
-	case <-s.lost:
-		return errs.New(errs.KindTransport, errs.CodeConnectionLost, fmt.Sprintf("connection error: the line %s closed during the link start-up", s.target), errLineClosed)
+	err := s.c.WaitUp(ctx)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.DeadlineExceeded):
+		return errs.New(errs.KindTimeout, errs.CodeLinkTimeout,
+			fmt.Sprintf("timeout: the device at link address %d on %s did not answer the link start-up", s.cfg.LinkAddress, s.target), err)
+	case s.c.Err() != nil:
+		return errs.New(errs.KindTransport, errs.CodeConnectionLost,
+			fmt.Sprintf("connection error: the line %s closed during the link start-up", s.target), fmt.Errorf("%w: %w", errLineClosed, err))
 	}
+	return WrapError(err)
 }
 
 // close stops the controlling system and closes the line.
