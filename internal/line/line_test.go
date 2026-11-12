@@ -223,3 +223,46 @@ func FuzzParseURL(f *testing.F) {
 		}
 	})
 }
+
+// A connection that arrives while the previous one is ending is served once it has ended,
+// within BusyGrace, not refused.
+func TestServeWaitsForThePrevious(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	release := make(chan struct{})
+	served := make(chan string, 2)
+	var busy, n atomic.Int32
+	go func() {
+		_ = Serve(ctx, l, func(ctx context.Context, c Conn) {
+			served <- c.Remote
+			if n.Add(1) == 1 {
+				<-release
+			}
+		}, func(string) { busy.Add(1) })
+	}()
+	first, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	<-served
+	second, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = second.Close() }()
+	time.Sleep(BusyGrace / 5)
+	close(release)
+	select {
+	case <-served:
+	case <-time.After(2 * BusyGrace):
+		t.Fatal("the second connection was not served")
+	}
+	if busy.Load() != 0 {
+		t.Errorf("busy reported %d times", busy.Load())
+	}
+}

@@ -182,16 +182,22 @@ type Conn struct {
 	Remote string
 }
 
+// BusyGrace is how long a connection that arrives while another is served waits for that
+// one to end before it is refused. A controlling station that closes its connection and
+// opens the next one at once (one command after another) must not find the line busy
+// while the station is still tearing the first one down.
+var BusyGrace = 500 * time.Millisecond
+
 // Serve accepts connections on l and runs handle for one at a time, as a serial line has
-// one controlling station: a connection that arrives while one is served is closed at once
-// and reported to busy (which may be nil). It returns when ctx ends or l fails, after the
-// connection being served has ended; it closes l.
+// one controlling station: a connection that arrives while one is served waits up to
+// BusyGrace for it to end, and is then closed and reported to busy (which may be nil). It
+// returns when ctx ends or l fails, after the connection being served has ended; it closes
+// l.
 func Serve(ctx context.Context, l net.Listener, handle func(ctx context.Context, c Conn), busy func(remote string)) error {
-	var (
-		mu     sync.Mutex
-		active bool
-		wg     sync.WaitGroup
-	)
+	// free holds one token while no connection is served.
+	free := make(chan struct{}, 1)
+	free <- struct{}{}
+	var wg sync.WaitGroup
 	stop := context.AfterFunc(ctx, func() { _ = l.Close() })
 	defer stop()
 	defer wg.Wait()
@@ -204,27 +210,26 @@ func Serve(ctx context.Context, l net.Listener, handle func(ctx context.Context,
 			}
 			return err
 		}
-		remote := nc.RemoteAddr().String()
-		mu.Lock()
-		if active {
-			mu.Unlock()
-			_ = nc.Close()
-			if busy != nil {
-				busy(remote)
-			}
-			continue
-		}
-		active = true
-		mu.Unlock()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() {
+			remote := nc.RemoteAddr().String()
+			wait := time.NewTimer(BusyGrace)
+			defer wait.Stop()
+			select {
+			case <-free:
+			case <-wait.C:
 				_ = nc.Close()
-				mu.Lock()
-				active = false
-				mu.Unlock()
-			}()
+				if busy != nil {
+					busy(remote)
+				}
+				return
+			case <-ctx.Done():
+				_ = nc.Close()
+				return
+			}
+			defer func() { free <- struct{}{} }()
+			defer func() { _ = nc.Close() }()
 			cctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			closeOnEnd := context.AfterFunc(cctx, func() { _ = nc.Close() })
