@@ -51,6 +51,8 @@ type rogue struct {
 	mu     sync.Mutex
 	conns  []net.Conn
 	frames atomic.Int64
+	// closed, if set, is called when a connection ends, after it was closed.
+	closed func(c *rogueConn)
 }
 
 type rogueConn struct {
@@ -61,11 +63,17 @@ type rogueConn struct {
 
 func startRogue(t *testing.T, answer func(c *rogueConn, f ft12.Frame) ([]byte, error)) *rogue {
 	t.Helper()
+	return startRogueClosed(t, answer, nil)
+}
+
+// startRogueClosed is startRogue that calls closed when a connection ends.
+func startRogueClosed(t *testing.T, answer func(c *rogueConn, f ft12.Frame) ([]byte, error), closed func(c *rogueConn)) *rogue {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &rogue{ln: ln, answer: answer}
+	r := &rogue{ln: ln, answer: answer, closed: closed}
 	r.wg.Go(func() {
 		for {
 			c, err := ln.Accept()
@@ -83,8 +91,13 @@ func startRogue(t *testing.T, answer func(c *rogueConn, f ft12.Frame) ([]byte, e
 }
 
 func (r *rogue) serve(c net.Conn) {
-	defer func() { _ = c.Close() }()
 	rc := &rogueConn{r: r, userFC: map[bool]int{}}
+	defer func() {
+		_ = c.Close()
+		if r.closed != nil {
+			r.closed(rc)
+		}
+	}()
 	dec := ft12.NewDecoder(c, fp)
 	for {
 		f, err := dec.Next()

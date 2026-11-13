@@ -4,7 +4,7 @@ What iec101ctl does not do, and why. The protocol behaviour is go-iec60870-5's (
 
 ## Evidence
 
-- **Interoperability** is evidence from runs against the IEC 101 images of otfabric/iec60870-5-interop v0.4.0 (contract 2.3, pinned by digest in `interop/iec101ctl`): lib60870-C, cB-Sigma/iec60870 and digitalpetri/iec60870, both directions, both link modes, with the default field sizes and the sets 2/2/2/3, 1/2/1/3, 2/1/2/2 and (balanced) 0/1/1/2. It is interop with these stacks over a TCP stream, not with field devices, and not on a serial line: the serial port path is tested with an in-memory line only.
+- **Interoperability** is evidence from runs against the IEC 101 images of otfabric/iec60870-5-interop v0.5.0 (contract 2.3, pinned by digest in `interop/iec101ctl`): lib60870-C, cB-Sigma/iec60870 and digitalpetri/iec60870, both directions, both link modes, with the default field sizes and the sets 2/2/2/3, 1/2/1/3, 2/1/2/2 and (balanced) 0/1/1/2. It is interop with these stacks over a TCP stream, not with field devices, and not on a serial line: the serial port path is tested with an in-memory line only.
 - **Balanced against a digitalpetri station** nothing beyond the link start-up interworks: the station does not initialize its own direction of the link, an upstream defect listed in the harness's known bugs. The interop suite skips those runs after it has seen the defect reproduce.
 - **Standards.** IEC 60870-5-101 and -2 are applied as go-iec60870-5 implements them. The delay acquisition formula comes from IEC 60870-5-5, which go-iec60870-5 does not hold: `client delay` reports an interpretation. Nothing is certified; no conformance is claimed.
 

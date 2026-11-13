@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package interop runs the built iec102ctl against the independent IEC 60870-5-102
-// controlling station published by otfabric/iec60870-5-interop v0.4.0 (contract 2.3):
+// controlling station published by otfabric/iec60870-5-interop v0.5.0 (contract 2.3):
 // gisce/iec870ree, a Python master of the Spanish REE profile, in the image iec102-gisce,
 // pinned by digest in harness_test.go. `iec102ctl server start` serves the harness's
 // baseline fixture, converted to a meter model; the suite reads the fixture from the image

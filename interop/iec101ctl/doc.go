@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 
 // Package interop runs the built iec101ctl against the independent IEC 60870-5-101
-// implementations published by otfabric/iec60870-5-interop v0.4.0 (contract 2.3), pinned by
+// implementations published by otfabric/iec60870-5-interop v0.5.0 (contract 2.3), pinned by
 // the same digests as go-iec60870-5's iec101/interop: `iec101ctl client` against each
 // image's server, and each image's client against `iec101ctl server start`, in unbalanced
 // and balanced mode, with the default field sizes and the non-default sets of field sizes
 // of go-iec60870-5's iec101/interop/fields.go where the image takes them.
 //
 // Expected values come from the images (print-fixture baseline) and from the harness's
-// case table (testdata/cases.tsv, copied from the harness at v0.4.0), never from
+// case table (testdata/cases.tsv, copied from the harness at v0.5.0), never from
 // iec60870ctl or go-iec60870-5.
 //
 // Environment:

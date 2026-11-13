@@ -13,7 +13,7 @@ Four command-line tools for the IEC 60870-5 companion standards, built on [go-ie
 | `internal/{errs,format,runner,cli,buildinfo,envflag}` | shared by the four tools: exit codes, output formats, wiring |
 | `internal/line` | FT 1.2 transport of the serial tools: serial port or TCP terminal server |
 | `e2e/<tool>/` | `make e2e`: the built tool against go-iec60870-5's servers and clients |
-| `interop/<tool>/` | `make interop`: the built tool against the iec60870-5-interop v0.4.0 images, pinned by digest |
+| `interop/<tool>/` | `make interop`: the built tool against the iec60870-5-interop v0.5.0 images, pinned by digest |
 
 ## Organisation standards
 

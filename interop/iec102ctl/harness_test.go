@@ -22,10 +22,10 @@ import (
 )
 
 // gisceImage is the reference: the gisce/iec870ree v0.14.1 client of
-// otfabric/iec60870-5-interop v0.4.0 (contract 2.3), pinned by multi-arch
+// otfabric/iec60870-5-interop v0.5.0 (contract 2.3), pinned by multi-arch
 // index digest (the release's manifest.json): the same digest as
-// go-iec60870-5 v0.4.1 iec102/interop/harness.go.
-const gisceImage = "ghcr.io/otfabric/iec60870-5-interop-iec102-gisce@sha256:dedd69a06eb7f138f34827827120f69e2a43760c9383e425ddf0b05df9766139"
+// go-iec60870-5 v0.5.2 iec102/interop/harness.go.
+const gisceImage = "ghcr.io/otfabric/iec60870-5-interop-iec102-gisce@sha256:6859e02a1c41406972f65213c000dbc977a939162d4aa1e20d48ae9cbe7f19ad"
 
 type adapter struct {
 	name, image string
@@ -318,7 +318,10 @@ func knownBugs(t *testing.T) []knownBug {
 		if err != nil {
 			t.Fatalf("known-bugs.tsv: %v", err)
 		}
-		bugs = append(bugs, knownBug{adapter: col[0], version: col[1], match: re, what: col[3], id: col[4], url: col[5]})
+		// Since harness v0.5.0 an adapter may name a role (<adapter>@client,
+		// <adapter>@server); gisce has only the client role here.
+		who, _, _ := strings.Cut(col[0], "@")
+		bugs = append(bugs, knownBug{adapter: who, version: col[1], match: re, what: col[3], id: col[4], url: col[5]})
 	}
 	return bugs
 }

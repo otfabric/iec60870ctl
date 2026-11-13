@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package interop runs the built iec104ctl against the IEC 104 reference images of
-// otfabric/iec60870-5-interop v0.4.0, in both directions: iec104ctl client against each
+// otfabric/iec60870-5-interop v0.5.0, in both directions: iec104ctl client against each
 // reference server, and each reference client against iec104ctl server start. Run it with
 // make interop (Docker required).
 package interop
@@ -24,23 +24,23 @@ import (
 	"time"
 )
 
-// The references: the IEC 104 images of otfabric/iec60870-5-interop v0.4.0 (lib60870-C
+// The references: the IEC 104 images of otfabric/iec60870-5-interop v0.5.0 (lib60870-C
 // v2.4.1, OpenMUC j60870 1.8.0, wendy512/iec104 v1.0.4, cB-Sigma/iec60870 v0.3.0,
 // pascaldekloe/part5 v0.3.0), pinned by multi-arch index digest: the digests of the
-// release's manifest.json, the same as go-iec60870-5 v0.4.1 iec104/interop/harness.go.
+// release's manifest.json, the same as go-iec60870-5 v0.5.2 iec104/interop/harness.go.
 const (
-	interopRelease = "v0.4.0"
+	interopRelease = "v0.5.0"
 	readyFile      = "/run/iec60870-5-interop/ready"
 )
 
 type adapter struct{ name, env, image string }
 
 var references = []adapter{
-	{"lib60870", "IEC104_INTEROP_LIB60870_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-lib60870@sha256:adda416d5659671e28080bca361a7fb6708aa8dce1877cba8207008049d1bb04"},
-	{"openmuc", "IEC104_INTEROP_OPENMUC_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-openmuc@sha256:a619fc3e15a44cff6793d1d17f6db3f8783fbb0557b79ff46bbb8280ee95e8e5"},
-	{"wendy512", "IEC104_INTEROP_WENDY512_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-wendy512@sha256:03773fceb73cd6a6923209ad81fc5dbdcfff9cf538544b4067f1b21ee5b4a679"},
-	{"cbsigma", "IEC104_INTEROP_CBSIGMA_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-cbsigma@sha256:f25d56f35badd81134813c6098ecf0cf63e6e8c9aec69f9e404f77cd2f626506"},
-	{"part5", "IEC104_INTEROP_PART5_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-part5@sha256:6ff105c63340053a8365ce70373f0a72c514a847003046d48208a0df3f591ea6"},
+	{"lib60870", "IEC104_INTEROP_LIB60870_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-lib60870@sha256:6b5579313245cda64a31f308b0b83b01041698807539e2ed6b5885ee9d929a34"},
+	{"openmuc", "IEC104_INTEROP_OPENMUC_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-openmuc@sha256:eebe06e6bdd2a7c23ac66d49c79249f56cae3d88d64ac1e6890d8bc905e83308"},
+	{"wendy512", "IEC104_INTEROP_WENDY512_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-wendy512@sha256:522ccfd92c095e3a90cc67d6f71b4b82b96e8411d28678a59e312259d43b1c55"},
+	{"cbsigma", "IEC104_INTEROP_CBSIGMA_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-cbsigma@sha256:68f025d84b0f16c412aa0e23c036152ae73b1b23d9012aa009d4ca13c65ed53e"},
+	{"part5", "IEC104_INTEROP_PART5_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec104-part5@sha256:4a623326447c479f439d7ca1276039d4671ca731809b2957f44855b1f6ac884a"},
 }
 
 // require makes a missing prerequisite a failure instead of a skip (CI sets it).

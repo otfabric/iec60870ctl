@@ -9,7 +9,7 @@ package interop
 //	INTEROP_BIN_DIR=$PWD/bin go test -tags=interop ./interop/iec103ctl/
 //
 // Pairings, both directions where an image has the role (contract 2.3 of
-// otfabric/iec60870-5-interop v0.4.0):
+// otfabric/iec60870-5-interop v0.5.0):
 //
 //	iec103ctl client -> vitusdong server         client_test.go
 //	vitusdong, ariec103, open103, goiecp5 client -> iec103ctl server start   server_test.go

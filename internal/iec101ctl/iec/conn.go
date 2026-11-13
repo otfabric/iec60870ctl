@@ -66,16 +66,55 @@ func openLine(ctx context.Context, cfg *config.ConnConfig) (line.Target, io.Read
 	return target, rw, nil
 }
 
+// busyRetry is the pause before a TCP line that closed during the link start-up is opened
+// again (times the attempt): a terminal server, an interop image or `iec101ctl server
+// start` serves one controlling station at a time and closes a connection that arrives
+// while it still serves the previous one, which a command run right after another meets.
+var busyRetry = 50 * time.Millisecond
+
 // Dial opens the line of cfg, starts a controlling station on it and waits, within the
 // timeout of cfg, until the link is initialized. trace receives the frame trace of --debug.
+// A TCP line that closes before Dial returns is opened again until the timeout: nothing but
+// the link start-up (and polls for class 2 data) was sent on it.
 func Dial(ctx context.Context, cfg *config.ConnConfig, trace io.Writer, hooks Hooks) (*Session, error) {
 	l, err := LinkParams(cfg.LinkConfig)
 	if err != nil {
 		return nil, errs.WrapValidation(err)
 	}
+	timeout := Timeout(cfg.Timeout)
+	wctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var lastClosed error
+	for attempt := 1; ; attempt++ {
+		s, closed, err := dialOnce(ctx, wctx, cfg, l, trace, hooks)
+		if err == nil {
+			return s, nil
+		}
+		if !closed {
+			// The timeout ending an attempt after lines that closed: the line kept
+			// closing, which says more than the timeout.
+			if lastClosed != nil && ctx.Err() == nil && wctx.Err() != nil {
+				return nil, lastClosed
+			}
+			return nil, err
+		}
+		lastClosed = err
+		pause := time.NewTimer(time.Duration(attempt) * busyRetry)
+		select {
+		case <-wctx.Done():
+			pause.Stop()
+			return nil, err
+		case <-pause.C:
+		}
+	}
+}
+
+// dialOnce is one attempt of Dial; closed reports a TCP line that closed before the link
+// came up, which Dial opens again.
+func dialOnce(ctx, wctx context.Context, cfg *config.ConnConfig, l Link, trace io.Writer, hooks Hooks) (*Session, bool, error) {
 	target, rw, err := openLine(ctx, cfg)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	timeout := Timeout(cfg.Timeout)
 	p := l.Params
@@ -93,16 +132,16 @@ func Dial(ctx context.Context, cfg *config.ConnConfig, trace io.Writer, hooks Ho
 	})
 	if err != nil {
 		_ = rw.Close()
-		return nil, errs.WrapValidation(err)
+		return nil, false, errs.WrapValidation(err)
 	}
 	s := &Session{Client: c, Target: target, Link: l, Timeout: timeout}
-	wctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	if err := c.WaitUp(wctx); err != nil {
+		closed := !target.Serial() && ctx.Err() == nil && wctx.Err() == nil && c.Err() != nil
+		uerr := upError(ctx, c, err)
 		_ = c.Close()
-		return nil, upError(ctx, c, err)
+		return nil, closed, uerr
 	}
-	return s, nil
+	return s, false, nil
 }
 
 // upError says why the link did not come up.
