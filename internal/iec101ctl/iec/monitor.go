@@ -22,6 +22,19 @@ import (
 // reopenDelay is the pause before a lost line is opened again.
 var reopenDelay = time.Second
 
+// pauseReopen waits reopenDelay before a lost line is opened again; it reports false when
+// ctx ended first.
+func pauseReopen(ctx context.Context) bool {
+	t := time.NewTimer(reopenDelay)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 // MonitorSummary is printed to stderr when `client monitor` ends.
 type MonitorSummary struct {
 	Target   string
@@ -160,13 +173,17 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 
 	begin := time.Now()
 	for attempt := 0; ; attempt++ {
-		var s *Session
+		var (
+			s    *Session
+			upOn bool // the link came up on this line
+		)
 		ready := make(chan struct{})
 		onState := func(st iec101.State, err error) {
 			switch st {
 			case iec101.StateUp:
 				mu.Lock()
 				sum.LinkUps++
+				upOn = true
 				mu.Unlock()
 				say("monitor: link up")
 				if cfg.Interrogate {
@@ -195,11 +212,32 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		var sess *Session
 		sess, err = Dial(ctx, &cfg.ConnConfig, status, Hooks{Handler: handler, OnState: onState})
 		if err != nil {
-			if ctx.Err() != nil && attempt > 0 {
+			mu.Lock()
+			wasUp := upOn
+			mu.Unlock()
+			// Only the first line, and only if its link never came up, ends the monitor
+			// with the error of Dial: the configuration or the station is wrong. A line
+			// that fails after its link came up (the station closed it before Dial
+			// returned), or a line opened again that fails before its link came up
+			// (closed by the station or a terminal server, or not answering yet), is
+			// lost like any other: open it again rather than ending the monitor.
+			if attempt == 0 && !wasUp {
+				sum.Duration = time.Since(begin)
+				return sum, err
+			}
+			if ctx.Err() != nil {
 				break
 			}
-			sum.Duration = time.Since(begin)
-			return sum, err
+			if cfg.NoReconnect {
+				sum.Duration = time.Since(begin)
+				return sum, err
+			}
+			say("monitor: line lost: %v", err)
+			if !pauseReopen(ctx) {
+				break
+			}
+			sum.Reopens++
+			continue
 		}
 		mu.Lock()
 		s = sess
@@ -221,11 +259,7 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 			return sum, errs.New(errs.KindTransport, errs.CodeConnectionLost, fmt.Sprintf("connection error: the line closed: %v", sess.Err()), sess.Err())
 		}
 		say("monitor: line lost: %v", sess.Err())
-		select {
-		case <-ctx.Done():
-		case <-time.After(reopenDelay):
-		}
-		if ctx.Err() != nil {
+		if !pauseReopen(ctx) {
 			break
 		}
 		sum.Reopens++

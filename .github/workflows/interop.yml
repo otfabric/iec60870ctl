@@ -2,9 +2,9 @@ name: Interop
 run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
 # Runs each built tool against the reference implementations published by
-# otfabric/iec60870-5-interop v0.4.0, as client and as server. The images are pinned by
+# otfabric/iec60870-5-interop v0.5.0, as client and as server. The images are pinned by
 # digest in interop/<tool>/ (the digests of the release's manifest.json, the same as
-# go-iec60870-5 v0.4.1); nothing of iec60870-5-interop is cloned or built here.
+# go-iec60870-5 v0.5.2); nothing of iec60870-5-interop is cloned or built here.
 
 on:
   push:

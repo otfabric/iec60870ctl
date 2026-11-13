@@ -133,7 +133,7 @@ vuln: ## Scan the module and its dependencies for known vulnerabilities (govulnc
 e2e: build-nocheck ## Build the four tools and run the e2e suite against them and go-iec60870-5's servers
 	@E2E_BIN_DIR=$(CURDIR)/$(BIN_DIR) go test -count=1 -tags=e2e ./e2e/...
 
-interop: build-nocheck ## Run the tools against the iec60870-5-interop v0.4.0 images (Docker; pinned by digest in interop/<tool>/; V=1 for -v)
+interop: build-nocheck ## Run the tools against the iec60870-5-interop v0.5.0 images (Docker; pinned by digest in interop/<tool>/; V=1 for -v)
 	@INTEROP_BIN_DIR=$(CURDIR)/$(BIN_DIR) go test -count=1 -tags=interop -timeout=40m $(if $(V),-v,) $(INTEROP_PKG)
 
 install: build-nocheck ## Install the four tools to /usr/local/bin

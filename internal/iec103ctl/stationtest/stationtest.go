@@ -17,7 +17,7 @@ import (
 )
 
 // Model is the model the tests run against: the IEC 103 baseline fixture of
-// otfabric/iec60870-5-interop v0.4.0 (fixtures/iec103/baseline), with the headings of its
+// otfabric/iec60870-5-interop v0.5.0 (fixtures/iec103/baseline), with the headings of its
 // generic group. Nothing in it changes by itself, so that results are exact.
 const Model = `{
   "schemaVersion": "1.0",

@@ -9,7 +9,7 @@ go-iec60870-5's ([its LIMITATIONS.md](https://github.com/otfabric/go-iec60870-5/
 ## Evidence, not conformance
 
 - Interoperability is shown against the independent implementations of
-  iec60870-5-interop v0.4.0 over TCP ([TESTING.md](TESTING.md)), not against field devices,
+  iec60870-5-interop v0.5.0 over TCP ([TESTING.md](TESTING.md)), not against field devices,
   and for the serial tools not on a real serial line: the serial-port path is tested with
   in-memory lines.
 - **IEC 102 has no reference controlled station.** iec102ctl's client is evidenced only

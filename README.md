@@ -108,7 +108,7 @@ Add `--format json` for scripts, `--format table` for a grid, and the global `--
 
 ## Evidence
 
-Every tool runs end to end against go-iec60870-5's own servers and clients (`make e2e`) and against the independent implementations published by [otfabric/iec60870-5-interop](https://github.com/otfabric/iec60870-5-interop) v0.4.0, pinned by digest (`make interop`, the Interop workflow). What ran, per tool, is in the "tested with" section of each guide and in [TESTING.md](TESTING.md). Interoperability with those implementations is not conformance to the standards; no tool claims more than its tests show.
+Every tool runs end to end against go-iec60870-5's own servers and clients (`make e2e`) and against the independent implementations published by [otfabric/iec60870-5-interop](https://github.com/otfabric/iec60870-5-interop) v0.5.0, pinned by digest (`make interop`, the Interop workflow). What ran, per tool, is in the "tested with" section of each guide and in [TESTING.md](TESTING.md). Interoperability with those implementations is not conformance to the standards; no tool claims more than its tests show.
 
 ## Documentation
 
@@ -132,7 +132,7 @@ Every tool runs end to end against go-iec60870-5's own servers and clients (`mak
 ```bash
 make check     # format, lint, vet, govulncheck, tests, coverage (90 % total and per package), docs
 make e2e       # build the four tools and run them against go-iec60870-5's servers and clients
-make interop   # run them against the iec60870-5-interop v0.4.0 images (Docker)
+make interop   # run them against the iec60870-5-interop v0.5.0 images (Docker)
 make fuzz      # every fuzz target for FUZZTIME (10s)
 make chaos     # chaos and hostile-peer tests, CHAOS_SEEDS seeds
 make build-nocheck   # bin/iec101ctl … bin/iec104ctl

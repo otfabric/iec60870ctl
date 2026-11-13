@@ -5,6 +5,40 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.9.3
+
+**Date:** 2026-11-13
+**Previous release:** v0.9.2
+
+Fixes `iec101ctl client monitor` ending on a line that closed during the link start-up,
+and moves the interop suites to the images of iec60870-5-interop v0.5.0.
+
+### Fixed
+
+- **iec101ctl `client monitor`:** a line that closed while its link was being
+  initialized ended the monitor with "connection error: the line closed before the link
+  came up" instead of being opened again. This happened to a line opened again after a
+  loss, and to the first line when the station closed it right after the link came up,
+  before the dial returned. Now only a first line whose link never came up ends the
+  monitor; every other lost line is opened again unless `--no-reconnect`. iec102ctl has
+  no monitor, iec103ctl already opened such a line again, and iec104ctl's reconnection is
+  the library's.
+- **iec101ctl, every client command:** a TCP line that closed during the link start-up
+  failed the command at once with "the line closed before the link came up", where
+  iec102ctl and iec103ctl open such a line again: a terminal server (or an interop
+  image) that still serves the previous connection closes the next one. It is now opened
+  again, with a growing pause, until `--timeout`; nothing but the link start-up was sent
+  on it. A serial line is not.
+
+### Changed
+
+- **Interop:** the suites of all four tools run against the images of
+  iec60870-5-interop v0.5.0 (contract 2.3 unchanged), pinned by the digests of that
+  release, with its case and known-bug tables. The iec103ctl and iec102ctl suites read
+  the role a known-bug entry may now carry (`<adapter>@client`, `<adapter>@server`).
+
+---
+
 ## v0.9.2
 
 **Date:** 2026-11-12

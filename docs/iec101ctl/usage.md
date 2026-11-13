@@ -48,7 +48,7 @@ Every client command opens the line, brings up the link (request status of link,
 | `--link-timeout`, `--link-retries` | How long the link layer waits for the answer to a frame before it repeats it (1000 ms) and how often (3). On a slow line raise the time-out: IEC 60870-5-101 6.2.2 gives about 2.25 s at 1200 bit/s |
 | `--poll-interval` | Unbalanced: the pause between class 2 polls when the station has nothing to send (100 ms) |
 | `--strict` | Apply the IEC 60870-5-101 profile checks of go-iec60870-5 to every ASDU sent and received |
-| `--timeout` | Bringing up the link and each request (10 s) |
+| `--timeout` | Bringing up the link and each request (10 s). A TCP line that closes during the link start-up (a terminal server still serving the previous connection) is opened again until the timeout |
 | `--ca` | Common address of the station (default 1); the broadcast address is 255, or 65535 with `--ca-size 2` |
 
 Nothing on the wire says which field sizes a station uses: they must match the station. A link that does not come up ends with exit code 5 and the error code `link_init_failed`.
@@ -109,7 +109,7 @@ iec101ctl client clock --url serial:///dev/ttyUSB0 --baud 1200
 
 ### `client monitor`
 
-Stay on the line and print every value as it arrives (one line, JSON object or table row each), until Ctrl-C, `--duration` or `--count`. `--interrogate` runs a general interrogation each time the link comes up. A link that stops answering is initialized again; a lost line is opened again unless `--no-reconnect`. `--all` also shows confirmations and terminations.
+Stay on the line and print every value as it arrives (one line, JSON object or table row each), until Ctrl-C, `--duration` or `--count`. `--interrogate` runs a general interrogation each time the link comes up. A link that stops answering is initialized again; a lost line is opened again unless `--no-reconnect`, also one that closes while its link is being initialized; only a first line whose link never comes up ends the monitor. `--all` also shows confirmations and terminations.
 
 ```console
 iec101ctl client monitor --url tcp://10.0.0.5:2401 --interrogate --format json > events.jsonl

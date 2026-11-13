@@ -22,13 +22,13 @@ import (
 	"time"
 )
 
-// The references: the IEC 101 images of otfabric/iec60870-5-interop v0.4.0 (contract
+// The references: the IEC 101 images of otfabric/iec60870-5-interop v0.5.0 (contract
 // 2.3), pinned by the same multi-arch index digests as go-iec60870-5's
 // iec101/interop/harness.go.
 var stacks = []struct{ name, env, image string }{
-	{"lib60870", "IEC101_INTEROP_LIB60870_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec101-lib60870@sha256:a8ccc0696c7f49d0a7495bc8a1fee7e66b072e79524f99ffce157d0f7d5c242a"},
-	{"cbsigma", "IEC101_INTEROP_CBSIGMA_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec101-cbsigma@sha256:0a06ed357cd9029004451685f809f8e52da7107b6ca2eb0ee1ec4df6747b0a12"},
-	{"digitalpetri", "IEC101_INTEROP_DIGITALPETRI_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec101-digitalpetri@sha256:25b4fd07759fe5f68151ee2c936567859c187cd54542d4a8a7888d2fb9a06852"},
+	{"lib60870", "IEC101_INTEROP_LIB60870_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec101-lib60870@sha256:2b256a3c7c3cb1b9920029f078266148bd9126e8f892ab73efda347c156aef72"},
+	{"cbsigma", "IEC101_INTEROP_CBSIGMA_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec101-cbsigma@sha256:b781f7ae94d49ff7654f63753e8098ea73e6cd4c00775512f8e429ea8000f47f"},
+	{"digitalpetri", "IEC101_INTEROP_DIGITALPETRI_IMAGE", "ghcr.io/otfabric/iec60870-5-interop-iec101-digitalpetri@sha256:7cd73b01d8b67e49366330e8898a35ca51a13364b306b284aa45e7bd675fa3eb"},
 }
 
 var modes = []string{"unbalanced", "balanced"}
@@ -225,7 +225,7 @@ func (a adapter) clientCanSend(op []string, f fields, mode string) bool {
 }
 
 // knownBug returns the known bug of the image's upstream version in a role that may
-// explain a mismatch, from testdata/known-bugs.tsv (copied from the harness v0.4.0).
+// explain a mismatch, from testdata/known-bugs.tsv (copied from the harness v0.5.0).
 func knownBug(t *testing.T, a adapter, role, mode string, op []string) string {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/known-bugs.tsv")
