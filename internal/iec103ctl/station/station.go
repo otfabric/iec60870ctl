@@ -178,9 +178,12 @@ func (s *Station) Serve(ctx context.Context, rw io.ReadWriter, remote string) er
 			wg.Go(func() { s.simulate(srv, ind, stop) })
 		}
 	}
+	// The station ends itself when a write fails, without a read failing first: the line
+	// ends with it, or the next controlling system would be refused as busy.
 	select {
 	case <-ctx.Done():
 	case <-w.closed:
+	case <-srv.Done():
 	}
 	close(stop)
 	wg.Wait()
