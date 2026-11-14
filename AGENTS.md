@@ -17,7 +17,7 @@ Four command-line tools for the IEC 60870-5 companion standards, built on [go-ie
 
 ## Organisation standards
 
-This repository follows **otfabric/engineering policy 1.5**, profile **cli** (`.otfabric/policy.yaml`, mode `enforce`). Where this file and the organisation standards disagree, this file wins here — say so in your report.
+This repository follows **otfabric/engineering policy 1.6**, profile **cli** (`.otfabric/policy.yaml`, mode `enforce`). Where this file and the organisation standards disagree, this file wins here — say so in your report.
 
 ## Where the truth lives
 
