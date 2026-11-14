@@ -5,6 +5,27 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.10.1
+
+**Date:** 2026-11-14
+**Previous release:** v0.10.0
+
+Moves the four tools to go-iec60870-5 v0.7.0 (was v0.6.0). The commands' options, output and exit codes are unchanged; the library's new bounds apply with their defaults.
+
+### Changed
+
+- Built on go-iec60870-5 v0.7.0 (go-iec60870-5 RELEASE.md, v0.7.0). For the tools this means:
+  - iec104ctl `client interrogate`, `client counters` and `client file list`: one request collects at most 65536 ASDUs (directory entries for `file list`), as iec101ctl does since v0.10.0. A request that would collect more ends with the library's result-limit error and what arrived so far; it is reported as in iec101ctl, iec102ctl and iec103ctl. A request that waits for one answer (a command, a read, a clock synchronization) ends with the same error when more than 16 answers to earlier requests are queued ahead of it.
+  - iec104ctl `client file get`: a file the station announces with more than 255 sections ends with a protocol error.
+  - iec104ctl `server start`: a state handler or accept filter that does not return normally is logged with its stack and closes only its own connection; the station goes on serving the others.
+  - iec104ctl with IEC 62351-5 (`--secure`): a remote certificate whose key usage allows neither key agreement nor digital signature is refused, and an authority certificate outside its validity period authorizes nothing. At the simulated station (`server start`), a completed Station Association ends the session keys of the earlier association; the controlling station then changes the session keys. Session keys that reach their use count or lifetime are no longer accepted from the message that finds them so, not only at the next timer tick.
+  - iec103ctl `server start`: the values of a disturbance channel are queued all or none. When the class 1 queue has no room for them the channel ends with TOO 37, which the controlling system acknowledges negatively and may request again; a record with a channel of more than 25575 values (more than the default class 1 queue of 1024 ASDUs holds) is refused with TOO 34 at its selection and no transfer starts. NOE announces the longest channel of the record.
+  - iec103ctl `client disturbance get`: keeps to the selected fault number (FAN): an end of transmission of another FAN is skipped, a channel offered for another FAN ends the transfer with what was received so far, and a channel whose values carry another FAN is acknowledged negatively.
+  - iec102ctl `client totals` and `client events` keep only the data of the requested record address.
+  - iec101ctl, iec102ctl and iec103ctl: a link exchange whose frame waits for room in a full send queue ends at its deadline or on Ctrl-C.
+
+---
+
 ## v0.10.0
 
 **Date:** 2026-11-14
