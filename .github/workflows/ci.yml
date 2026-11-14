@@ -1,13 +1,11 @@
+# Called by pr.yml on every pull request that is not documentation only;
+# dispatch it to run it on a branch without a pull request.
 name: CI
 run-name: "CI (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
 on:
-  push:
-    branches: ["**"]
-    paths-ignore: ['**/*.md']
-  pull_request:
-    branches: ["**"]
-    paths-ignore: ['**/*.md']
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,8 +13,10 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.1
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.8.0
     with:
+      # otfabric-policy runs in docs.yml, on every pull request and push to main.
+      run-policy: false
       run-govulncheck: true
       coverage-min: "90"
       codecov-name: iec60870ctl
@@ -26,7 +26,6 @@ jobs:
       test-exclude-regex: "/example(s)?($|/)"
       coverpkg: ./...
       fuzz-time: 10s
-      policy-version: v1.5.0
     secrets: inherit
 
   # go-ci gates the total; this gates each package (COVER_PKG_MIN), then runs the four
