@@ -26,6 +26,8 @@ func WrapError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return errs.New(errs.KindInterrupted, errs.CodeContextCanceled, "interrupted", err)
+	case errors.Is(err, iec103.ErrResultLimit):
+		return errs.New(errs.KindProtocol, errs.CodeResultLimit, fmt.Sprintf("protocol error: %v", err), err)
 	case errors.Is(err, iec103.ErrAborted):
 		return errs.New(errs.KindNegative, errs.CodeIEC103TransferAborted, fmt.Sprintf("the device aborted the transfer: %v", err), err)
 	case errors.Is(err, iec103.ErrNegative):
