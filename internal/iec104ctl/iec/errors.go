@@ -12,6 +12,7 @@ import (
 
 	"github.com/otfabric/go-iec60870-5/asdu"
 	iec104 "github.com/otfabric/go-iec60870-5/iec104"
+	"github.com/otfabric/go-iec60870-5/telecontrol"
 	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
 )
@@ -37,6 +38,8 @@ func WrapError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return errs.New(errs.KindInterrupted, errs.CodeContextCanceled, "interrupted", err)
+	case errors.Is(err, telecontrol.ErrResultLimit):
+		return errs.New(errs.KindProtocol, errs.CodeResultLimit, fmt.Sprintf("protocol error: %v", err), err)
 	case errors.As(err, &certErr), errors.As(err, &unknown), errors.As(err, &hostname), errors.As(err, &record):
 		return errs.New(errs.KindTransport, errs.CodeTransportTLSFailed, fmt.Sprintf("TLS error: %v", err), err)
 	case isSecError(err):

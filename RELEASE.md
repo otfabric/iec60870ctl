@@ -5,6 +5,19 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.11.0
+
+**Date:** 2026-11-14
+**Previous release:** v0.10.1
+
+Reports a request that hits the result limit of go-iec60870-5 as a protocol error. Still built on go-iec60870-5 v0.7.0.
+
+### Changed
+
+- All four tools: a request that hits the library's result limit now exits `6` (protocol) instead of `10` (internal), with JSON error kind `protocol` and the new code `result_limit` (was `internal` / `internal_unexpected`). This covers iec101ctl and iec104ctl `client interrogate` and `client counters`, iec104ctl `client file list`, the iec104ctl requests that end because more than 16 answers to earlier requests are queued ahead of them, and the collecting requests of iec102ctl and iec103ctl. Scripts that treated exit `10` from such a request as the result limit should check for `6` and `result_limit` ([docs/exitcodes.md](docs/exitcodes.md)).
+
+---
+
 ## v0.10.1
 
 **Date:** 2026-11-14

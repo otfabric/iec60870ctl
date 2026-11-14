@@ -27,6 +27,8 @@ const (
 	CodeProtocolViolation = "protocol_violation"
 	CodeNotStarted        = "data_transfer_not_started"
 	CodeRequestBusy       = "request_busy"
+	// A request collected more answers than the library's result limit allows.
+	CodeResultLimit = "result_limit"
 
 	// The station refused the request: P/N = 1 in the confirmation.
 	CodeNegativeConfirmation = "negative_confirmation"
