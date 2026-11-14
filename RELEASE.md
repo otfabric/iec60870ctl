@@ -5,6 +5,28 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.10.0
+
+**Date:** 2026-11-14
+**Previous release:** v0.9.3
+
+Moves the four tools to go-iec60870-5 v0.6.0 (was v0.5.2). The commands' options and output are unchanged; the library's new bounds apply with their defaults.
+
+### Changed
+
+- Built on go-iec60870-5 v0.6.0, with the fixes of v0.5.3 (go-iec60870-5 RELEASE.md, v0.5.3 and v0.6.0). For the tools this means:
+  - iec101ctl, iec102ctl and iec103ctl: one request collects at most 65536 ASDUs (iec102ctl: 131072). A request that would collect more ends with the library's result-limit error and what arrived so far.
+  - iec104ctl `station`: a session has at most 16 file transfers open at once, in addition to the station's own upload limits; one more is refused with "unknown information object address" until a transfer of that session ends.
+  - A library callback that does not return normally is logged with its stack and stops only the station that called it.
+  - iec101ctl: a request after the client closed reports that the client is closed, where it reported that the link was not initialized.
+- Built on go-serial v0.4.0 (was v0.3.0), for the serial lines of iec101ctl, iec102ctl and iec103ctl (go-serial RELEASE.md, v0.4.0).
+
+### Fixed
+
+- iec103ctl `station` over TCP: a line ends when its station ends, as in iec101ctl and iec102ctl. With go-iec60870-5 v0.6.0 the station ends itself when a write fails, without a read failing first. The line then stayed open, and every later controlling system was refused as busy. `TestHostileMaster` failed 24 of 45 runs that way and now passes.
+
+---
+
 ## v0.9.3
 
 **Date:** 2026-11-13
