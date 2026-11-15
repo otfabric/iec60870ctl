@@ -37,14 +37,17 @@ type Message struct {
 	DPI   *uint8 `json:"dpi,omitempty"`
 	State string `json:"state,omitempty"`
 	// Time is the time tag: HH:MM:SS.mmm for a CP32Time2a, RFC 3339 for a CP56Time2a.
-	Time        string      `json:"time,omitempty"`
-	TimeInvalid bool        `json:"time_invalid,omitempty"`
-	SIN         *uint8      `json:"sin,omitempty"`
-	SCN         *uint8      `json:"scn,omitempty"`
-	RET         *uint16     `json:"ret,omitempty"`
-	FAN         *uint16     `json:"fan,omitempty"`
-	SCL         *float64    `json:"scl,omitempty"`
-	Values      []Measurand `json:"values,omitempty"`
+	Time        string   `json:"time,omitempty"`
+	TimeInvalid bool     `json:"time_invalid,omitempty"`
+	SIN         *uint8   `json:"sin,omitempty"`
+	SCN         *uint8   `json:"scn,omitempty"`
+	RET         *uint16  `json:"ret,omitempty"`
+	FAN         *uint16  `json:"fan,omitempty"`
+	SCL         *float64 `json:"scl,omitempty"`
+	// NonFinite is in place of SCL for a short-circuit location that JSON has no number
+	// for: "NaN", "+Inf" or "-Inf". Omitted otherwise.
+	NonFinite string      `json:"non_finite,omitempty"`
+	Values    []Measurand `json:"values,omitempty"`
 	// COL, Manufacturer and Software are the identification (ASDU 5).
 	COL          *uint8 `json:"col,omitempty"`
 	Manufacturer string `json:"manufacturer,omitempty"`
@@ -82,6 +85,8 @@ func (m *Message) Summary() string {
 	}
 	if m.SCL != nil {
 		parts = append(parts, "scl="+strconv.FormatFloat(*m.SCL, 'g', -1, 64))
+	} else if m.NonFinite != "" {
+		parts = append(parts, "scl="+m.NonFinite)
 	}
 	if len(m.Values) > 0 {
 		vs := make([]string, len(m.Values))

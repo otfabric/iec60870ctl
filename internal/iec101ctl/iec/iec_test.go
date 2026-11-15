@@ -330,7 +330,10 @@ func TestTracer(t *testing.T) {
 	if cfg.OnFrame == nil || cfg.OnDiscard == nil {
 		t.Error("not attached")
 	}
-	discardUser{}.Reset(true)
+	refuseUser{}.Reset(true)
+	if (refuseUser{}).UserData([]byte{1}) {
+		t.Error("the raw link took user data")
+	}
 }
 
 func TestTerminationWait(t *testing.T) {

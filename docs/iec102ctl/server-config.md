@@ -47,15 +47,17 @@ The Spanish REE profile; without this section the meter is plain IEC 102 and ref
 | Field | Meaning |
 |-------|---------|
 | `access_key` | the key C_AC_NA_2 must carry (0-4294967295). A wrong key is answered with the P/N bit; C_FS_NA_2 is confirmed; C_CS_TA_2 sets the clock and is confirmed. The reads do not depend on an open session |
-| `contracted_powers` | the answer to C_PC_NA_2 (M_PC_NA_2, with the meter's clock as time a): `address` (tariff period), `power_kw`; at most 127 |
-| `special_days` | the answer to C_DF_NA_2 (M_DF_NA_2): times a or dates; at most 127 |
+| `contracted_powers` | the answer to C_PC_NA_2 (M_PC_NA_2, with the meter's clock as time a): `address` (tariff period), `power_kw`; at most 48, what one answer carries |
+| `special_days` | the answer to C_DF_NA_2 (M_DF_NA_2): times a or dates; at most 49, what one answer carries |
 | `tariffs` | per contract `register` (134-139): `current` records answer C_TA_VC_2, `stored` records C_TA_VM_2 (those whose `period_end` lies in the requested range); one M_TA_VC_2 / M_TA_VM_2 per record. Record fields: `address`, `active_abs`, `active_inc`, `active_quality`, `reactive_ind_abs`, `reactive_ind_inc`, `reactive_ind_quality`, `reactive_cap_abs`, `reactive_cap_inc`, `reactive_cap_quality`, `max_power`, `max_power_time` (time a), `max_power_quality`, `excess_power`, `excess_power_quality`, `period_start`, `period_end` (times a) |
 
 The REE reads are confirmed (cause 7), answered and terminated (cause 10); an unknown register is refused with cause 16, no matching record with 18, no powers or days with 17. This procedure is iec102ctl's: the one of C_TA_VC_2 and C_TA_VM_2 is that of the interop contract, which gisce/iec870ree follows; for C_PC_NA_2 and C_DF_NA_2 no source we hold shows one.
 
 ## Limits
 
-A model file is at most 16 MiB; at most 10000 totals lists, 100000 periods and 100000 events and tariff records in all.
+A model file is at most 16 MiB. It holds at most 10000 totals lists, 100000 periods and 1000000 integrated totals in all (listed and generated); a generated period at most 256 totals, each address once; at most 100000 events in all and 100000 tariff records per register; at most 48 contracted powers and 49 special days, as many as one answer carries (with a one- or two-octet link address and common address). A model beyond a limit is refused before the server serves, and the limits on generated totals are checked before any period is generated.
+
+Every answer of the model is served in full: the class 2 queue of a line holds the longest one (a read of every period of a list, a whole list of events, the stored records of a register) on top of go-iec60870-5's default of 4096 ASDUs. An answer that cannot be queued all the same is logged as a `warning` event, and the request ends without its termination.
 
 ## Example
 

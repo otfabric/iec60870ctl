@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
 )
 
@@ -38,6 +39,8 @@ func Points(a *asdu.ASDU) []types.Point {
 			Originator: a.Originator,
 		}
 		fill(&p, o, a.Type.HasTimeTag())
+		// A NaN or an infinity has no number in JSON: it is reported by its name.
+		p.Value, p.NonFinite = format.Finite(p.Value)
 		out = append(out, p)
 	}
 	if len(a.Objects) == 0 {

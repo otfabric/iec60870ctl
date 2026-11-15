@@ -505,7 +505,21 @@ type ServerEvent struct {
 	IOA        uint32 `json:"ioa,omitempty"`
 	Type       string `json:"type,omitempty"`
 	Value      any    `json:"value,omitempty"`
-	Detail     string `json:"detail,omitempty"`
+	// NonFinite names a value JSON has no number for, "NaN", "+Inf" or "-Inf", in place of
+	// Value (a set point that is not a finite number). Omitted for every other value.
+	NonFinite string `json:"non_finite,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// valueText is the value of the event for text and table output, "" when it has none.
+func (e *ServerEvent) valueText() string {
+	switch {
+	case e.Value != nil:
+		return textValue(e.Value)
+	case e.NonFinite != "":
+		return e.NonFinite
+	}
+	return ""
 }
 
 // MarshalTextOutput implements format.TextMarshaler.
@@ -524,8 +538,8 @@ func (e *ServerEvent) MarshalTextOutput() (string, error) {
 	if e.Type != "" {
 		_, _ = fmt.Fprintf(&b, "  %s", e.Type)
 	}
-	if e.Value != nil {
-		_, _ = fmt.Fprintf(&b, "  %s", textValue(e.Value))
+	if v := e.valueText(); v != "" {
+		_, _ = fmt.Fprintf(&b, "  %s", v)
 	}
 	if e.Detail != "" {
 		_, _ = fmt.Fprintf(&b, "  %s", e.Detail)
@@ -546,9 +560,5 @@ func (e *ServerEvent) TableRows() [][]string {
 		}
 		return strconv.FormatUint(n, 10)
 	}
-	value := ""
-	if e.Value != nil {
-		value = textValue(e.Value)
-	}
-	return [][]string{{e.Timestamp, e.Event, e.Remote, num(uint64(e.CommonAddr)), num(uint64(e.IOA)), e.Type, value, e.Detail}}
+	return [][]string{{e.Timestamp, e.Event, e.Remote, num(uint64(e.CommonAddr)), num(uint64(e.IOA)), e.Type, e.valueText(), e.Detail}}
 }

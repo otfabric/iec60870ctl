@@ -264,7 +264,10 @@ func CheckGenericWrite(cfg *config.GenericWriteConfig) error {
 }
 
 // GenericWriteSet writes one data set (clause 7.4.8.6.3, figure 17), once: with execution
-// (INF 250), or staged with write entry (INF 248) and then aborted (INF 251).
+// (INF 250), or staged with write entry (INF 248) and then aborted (INF 251). The abort is
+// also sent when the write entry failed, on a context of its own: the link layer may still
+// deliver the write entry. When the abort was not acknowledged, the error says that the
+// value may still be staged on the device.
 func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr io.Writer) (*types.GenericResult, error) {
 	set, err := checkWrite(cfg)
 	if err != nil {
@@ -279,6 +282,8 @@ func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr
 	start := time.Now()
 	inf := iec103.InfWriteExecute
 	var r *client.GenericResult
+	staging := false // --mode abort ended with an error: is the value still staged?
+	var abortErr error
 	err = s.request(ctx, s.timeout(), func(rctx context.Context) error {
 		w, e := s.c.BeginWrite()
 		if e != nil {
@@ -287,11 +292,16 @@ func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr
 		if mode == WriteAbort {
 			inf = iec103.InfWriteAbort
 			if e := w.Stage(rctx, set); e != nil {
-				// The write must still end: abort it so the client is free again.
-				_, _ = w.Abort(rctx)
+				// The link layer still delivers a write entry whose confirmation rctx did
+				// not wait for: the abort gets a context of its own, so that INF 251 is sent.
+				actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout())
+				defer cancel()
+				staging = true
+				_, abortErr = s.abortWrite(actx, w, false)
 				return e
 			}
-			r, e = w.Abort(rctx)
+			r, e = s.abortWrite(rctx, w, true)
+			staging, abortErr = e != nil, e
 			return e
 		}
 		r, e = w.Execute(rctx, set)
@@ -300,14 +310,41 @@ func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr
 	res := genericResult(s, GenericWrite, inf, r, start)
 	res.Mode = mode
 	if err != nil {
-		if e, ok := errs.As(err); ok && errors.Is(err, iec103.ErrNegative) && r != nil {
-			var codes []string
-			for _, d := range res.Sets {
-				codes = append(codes, d.GIN+" "+d.Reply)
+		if e, ok := errs.As(err); ok {
+			if errors.Is(err, iec103.ErrNegative) && r != nil {
+				var codes []string
+				for _, d := range res.Sets {
+					codes = append(codes, d.GIN+" "+d.Reply)
+				}
+				e.Message = fmt.Sprintf("the device refused the write (cause %d, %s): %s", res.Cause, res.CauseName, strings.Join(codes, ", "))
 			}
-			e.Message = fmt.Sprintf("the device refused the write (cause %d, %s): %s", res.Cause, res.CauseName, strings.Join(codes, ", "))
+			switch {
+			case !staging:
+			case abortErr != nil:
+				e.Message += ": the write may still be staged on the device: the write abort (INF 251) was not acknowledged"
+			default:
+				e.Message += ": the write was aborted (INF 251 acknowledged)"
+			}
 		}
 		return nil, err
 	}
 	return res, nil
+}
+
+// abortWrite ends w with write abort (INF 251). When ctx ends before the device answered,
+// INF 251 is sent once more with the RII of w, on a context of its own bounded by
+// --timeout, and the error of the first abort is returned: a write the device staged ends
+// only with an abort or with the line. The second abort is the same ASDU again, with the
+// COUNT bit of NGD (clause 7.2.6.30) the client gave the first: set when the write entry
+// before it was confirmed (staged).
+func (s *session) abortWrite(ctx context.Context, w *client.StagedWrite, staged bool) (*client.GenericResult, error) {
+	r, err := w.Abort(ctx)
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		return r, err
+	}
+	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout())
+	defer cancel()
+	_ = s.c.Send(actx, iec103.New(iec103.CauseGenericWrite, s.commonAddr(), iec103.FunGeneric, iec103.InfWriteAbort,
+		iec103.GenericData{RII: w.RII(), NGD: iec103.Counted{Count: staged}}))
+	return r, err
 }

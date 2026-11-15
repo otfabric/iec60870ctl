@@ -13,6 +13,11 @@ a field name or shape is called out in [RELEASE.md](../RELEASE.md).
   `null`.
 - A row that failed carries an `error` object with `kind`, `code` and `message`; it is
   omitted when the row is fine.
+- A floating point number JSON has no number for, a NaN or an infinity that a station or
+  device sent, is `null`, and a `non_finite` field next to it names it: `"NaN"`, `"+Inf"`
+  or `"-Inf"`. Text and table output show the same name. `non_finite` is omitted for every
+  other value, and the command goes on: a stream keeps streaming. Where each tool puts it
+  is in its reference below.
 - A fatal error is one object on stdout and nothing else:
 
   ```json

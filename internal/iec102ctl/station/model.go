@@ -194,12 +194,16 @@ type TariffRecordSpec struct {
 	PeriodEnd          string `yaml:"period_end" json:"period_end"`
 }
 
-// Limits of a model, so that a model file cannot make the station hold unbounded memory.
+// Limits of a model, so that a model file cannot make the station hold unbounded memory:
+// MaxTotals bounds the integrated totals of all periods together, listed and generated,
+// and MaxPeriodTotals the totals of one generated period (one per address).
 const (
-	MaxModelSize = 16 << 20
-	MaxPeriods   = 100000
-	MaxEvents    = 100000
-	MaxRecords   = 10000
+	MaxModelSize    = 16 << 20
+	MaxPeriods      = 100000
+	MaxEvents       = 100000
+	MaxRecords      = 10000
+	MaxTotals       = 1000000
+	MaxPeriodTotals = 256
 )
 
 // Load reads a model from a YAML or JSON file.

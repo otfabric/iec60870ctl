@@ -121,11 +121,23 @@ func CheckDisturbanceGet(cfg *config.DisturbanceGetConfig) error {
 
 // DisturbanceGet transfers one recorded disturbance with the procedure of clause 7.4.7 and
 // writes it to --output (JSON) and --csv when asked. The final positive acknowledgement
-// allows the equipment to delete the record.
+// allows the equipment to delete the record, so the files are created before anything is
+// sent: a file that cannot be created ends the command with invalid input, and the record
+// stays on the equipment. When the command fails after that, the files are removed.
 func DisturbanceGet(ctx context.Context, cfg *config.DisturbanceGetConfig, stderr io.Writer) (*types.DisturbanceResult, error) {
 	if err := CheckDisturbanceGet(cfg); err != nil {
 		return nil, errs.WrapValidation(err)
 	}
+	out, err := createOutputs(cfg)
+	if err != nil {
+		return nil, err
+	}
+	written := false
+	defer func() {
+		if !written {
+			out.remove()
+		}
+	}()
 	s, err := open(ctx, &cfg.ConnConfig, sessionOptions{trace: traceOf(cfg.Debug, stderr)})
 	if err != nil {
 		return nil, err
@@ -145,23 +157,98 @@ func DisturbanceGet(ctx context.Context, cfg *config.DisturbanceGetConfig, stder
 		return nil, err
 	}
 	res := &types.DisturbanceResult{Device: s.device(), Disturbance: DisturbanceOf(rec), DurationMs: since(start)}
-	if cfg.Output != "" {
+	if out.json != nil {
 		data, err := json.MarshalIndent(res.Disturbance, "", "  ")
 		if err != nil {
 			return nil, errs.Output(errs.CodeJSONEncodeFailed, err)
 		}
-		if err := writeFile(cfg.Output, append(data, '\n'), cfg.Force); err != nil {
+		if err := out.json.write(append(data, '\n')); err != nil {
 			return nil, err
 		}
 		res.Output = cfg.Output
 	}
-	if cfg.CSV != "" {
-		if err := writeFile(cfg.CSV, ChannelsCSV(&res.Disturbance), cfg.Force); err != nil {
+	if out.csv != nil {
+		if err := out.csv.write(ChannelsCSV(&res.Disturbance)); err != nil {
 			return nil, err
 		}
 		res.CSV = cfg.CSV
 	}
+	written = true
 	return res, nil
+}
+
+// outputFile is a file of `client disturbance get`, created before the transfer.
+type outputFile struct {
+	path string
+	f    *os.File
+}
+
+// outputs are the files of --output and --csv; nil where the flag is not set.
+type outputs struct{ json, csv *outputFile }
+
+// createOutputs creates the files of --output and --csv; when one of them cannot be
+// created, none is left behind.
+func createOutputs(cfg *config.DisturbanceGetConfig) (outputs, error) {
+	var out outputs
+	for _, f := range []struct {
+		flag, path string
+		to         **outputFile
+	}{{"--output", cfg.Output, &out.json}, {"--csv", cfg.CSV, &out.csv}} {
+		if f.path == "" {
+			continue
+		}
+		file, err := createOutput(f.flag, f.path, cfg.Force)
+		if err != nil {
+			out.remove()
+			return outputs{}, err
+		}
+		*f.to = file
+	}
+	return out, nil
+}
+
+// createOutput creates path: a new file, or with force an existing one emptied. A file that
+// cannot be created is invalid input: nothing was sent.
+func createOutput(flag, path string, force bool) (*outputFile, error) {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	if force {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	}
+	f, err := os.OpenFile(filepath.Clean(path), flags, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, errs.InvalidInput(errs.CodeOutputFileCreateFailed, fmt.Sprintf("%s exists: pass --force to overwrite it", path), err)
+		}
+		return nil, errs.InvalidInput(errs.CodeOutputFileCreateFailed, fmt.Sprintf("%s: %v: nothing was requested", flag, err), err)
+	}
+	return &outputFile{path: path, f: f}, nil
+}
+
+// write writes data to the file and closes it.
+func (o *outputFile) write(data []byte) error {
+	f := o.f
+	o.f = nil
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return errs.Output(errs.CodeOutputFileWriteFailed, err)
+	}
+	if err := f.Close(); err != nil {
+		return errs.Output(errs.CodeOutputFileWriteFailed, err)
+	}
+	return nil
+}
+
+// remove closes and removes the files.
+func (out outputs) remove() {
+	for _, o := range []*outputFile{out.json, out.csv} {
+		if o == nil {
+			continue
+		}
+		if o.f != nil {
+			_ = o.f.Close()
+		}
+		_ = os.Remove(filepath.Clean(o.path))
+	}
 }
 
 // ChannelsCSV renders the channel values of d: a header, then one row per value number
@@ -190,27 +277,4 @@ func ChannelsCSV(d *types.Disturbance) []byte {
 	}
 	w.Flush()
 	return buf.Bytes()
-}
-
-// writeFile writes data to path: a new file, or with force an existing one replaced.
-func writeFile(path string, data []byte, force bool) error {
-	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
-	if force {
-		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-	}
-	f, err := os.OpenFile(filepath.Clean(path), flags, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return errs.InvalidInput(errs.CodeOutputFileCreateFailed, fmt.Sprintf("%s exists: pass --force to overwrite it", path), err)
-		}
-		return errs.Output(errs.CodeOutputFileCreateFailed, err)
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return errs.Output(errs.CodeOutputFileWriteFailed, err)
-	}
-	if err := f.Close(); err != nil {
-		return errs.Output(errs.CodeOutputFileWriteFailed, err)
-	}
-	return nil
 }

@@ -188,43 +188,88 @@ type Conn struct {
 // while the station is still tearing the first one down.
 var BusyGrace = 500 * time.Millisecond
 
+// MaxWaiting is how many connections wait for the line at once, each up to BusyGrace. A
+// connection that arrives while that many wait is closed at once and reported busy.
+const MaxWaiting = 4
+
+// The pause after a failed accept: it doubles from acceptPauseMin up to acceptPauseMax
+// while accepts fail, as net/http does.
+const (
+	acceptPauseMin = 5 * time.Millisecond
+	acceptPauseMax = time.Second
+)
+
 // Serve accepts connections on l and runs handle for one at a time, as a serial line has
 // one controlling station: a connection that arrives while one is served waits up to
-// BusyGrace for it to end, and is then closed and reported to busy (which may be nil). It
-// returns when ctx ends or l fails, after the connection being served has ended; it closes
-// l.
-func Serve(ctx context.Context, l net.Listener, handle func(ctx context.Context, c Conn), busy func(remote string)) error {
+// BusyGrace for it to end, and is then closed and reported to busy (which may be nil). At
+// most MaxWaiting connections wait; a further one is closed at once and reported to busy.
+//
+// An accept that fails while l is open (the process has no file descriptor left, a peer
+// reset its connection before it was accepted) is reported to failed (which may be nil),
+// and Serve accepts again after a pause that grows from 5 ms to 1 s. Serve returns when ctx
+// ends or l is closed, after the connection being served has ended; it closes l.
+func Serve(ctx context.Context, l net.Listener, handle func(ctx context.Context, c Conn), busy func(remote string), failed func(err error)) error {
 	// free holds one token while no connection is served.
 	free := make(chan struct{}, 1)
 	free <- struct{}{}
+	// waiting holds one token for each connection that waits for the line.
+	waiting := make(chan struct{}, MaxWaiting)
 	var wg sync.WaitGroup
 	stop := context.AfterFunc(ctx, func() { _ = l.Close() })
 	defer stop()
 	defer wg.Wait()
 	defer func() { _ = l.Close() }()
+	var pause time.Duration
 	for {
 		nc, err := l.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return err
+			if errors.Is(err, net.ErrClosed) {
+				return err
+			}
+			if failed != nil {
+				failed(err)
+			}
+			pause = min(max(2*pause, acceptPauseMin), acceptPauseMax)
+			t := time.NewTimer(pause)
+			select {
+			case <-t.C:
+			case <-ctx.Done():
+				t.Stop()
+				return nil
+			}
+			continue
+		}
+		pause = 0
+		remote := nc.RemoteAddr().String()
+		select {
+		case waiting <- struct{}{}:
+		default:
+			_ = nc.Close()
+			if busy != nil {
+				busy(remote)
+			}
+			continue
 		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			remote := nc.RemoteAddr().String()
 			wait := time.NewTimer(BusyGrace)
 			defer wait.Stop()
 			select {
 			case <-free:
+				<-waiting
 			case <-wait.C:
+				<-waiting
 				_ = nc.Close()
 				if busy != nil {
 					busy(remote)
 				}
 				return
 			case <-ctx.Done():
+				<-waiting
 				_ = nc.Close()
 				return
 			}

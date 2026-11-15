@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -85,7 +86,7 @@ func TestValuesOf(t *testing.T) {
 		{iec103.Value{GDD: iec103.GDD{Type: iec103.DataFloat32, Size: 2, Number: 1}, Data: make([]byte, 2)}, "[]"},
 		{iec103.Value{GDD: iec103.GDD{Type: iec103.DataStructure, Size: 1, Number: 1}, Data: []byte{1}}, "[]"},
 	} {
-		if got := fmtAny(ValuesOf(c.v)); !strings.Contains(got, c.want) {
+		if got := fmtAny(first(ValuesOf(c.v))); !strings.Contains(got, c.want) {
 			t.Errorf("%+v: %s, want %s", c.v.GDD, got, c.want)
 		}
 	}
@@ -93,8 +94,8 @@ func TestValuesOf(t *testing.T) {
 	for range maxStructureDepth + 1 {
 		deep, _ = iec103.Structure(deep)
 	}
-	if !strings.Contains(fmtAny(ValuesOf(deep)), "values:[]") {
-		t.Fatal(fmtAny(ValuesOf(deep)))
+	if !strings.Contains(fmtAny(first(ValuesOf(deep))), "values:[]") {
+		t.Fatal(fmtAny(first(ValuesOf(deep))))
 	}
 	d := DescElementOf(iec103.DescElement{KOD: 10, Value: iec103.Reply(1)})
 	if d.Reply != "invalid-gin" || d.KODName != "description" {
@@ -349,4 +350,39 @@ func TestSharedLine(t *testing.T) {
 	}
 	_ = one.Close()
 	l.close()
+}
+
+// first returns the values of ValuesOf without the names of the non-finite ones.
+func first(values []any, _ []string) []any { return values }
+
+// A NaN or infinite number is null with its name at the same index, also in a structure
+// field; a value whose elements are all finite has no names.
+func TestValuesOfNonFinite(t *testing.T) {
+	st, err := iec103.Structure(iec103.Float32s(float32(math.NaN()), 1), iec103.Uints(iec103.DataUint, 1, 7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		v         iec103.Value
+		values    string
+		nonFinite []string
+	}{
+		{iec103.Float64s(math.Inf(1), 2, math.Inf(-1)), "[<nil> 2 <nil>]", []string{"+Inf", "", "-Inf"}},
+		{iec103.Float32s(1.5, 2), "[1.5 2]", nil},
+		{st, "[map[data:0000c07f0000803f non_finite:[NaN ] type:float32 values:[<nil> 1]] map[data:07 type:uint values:[7]]]", nil},
+	} {
+		values, nonFinite := ValuesOf(c.v)
+		if got := fmt.Sprint(values); got != c.values || fmt.Sprint(nonFinite) != fmt.Sprint(c.nonFinite) {
+			t.Errorf("%v: %s %q, want %s %q", c.v, got, nonFinite, c.values, c.nonFinite)
+		}
+	}
+	d := DataSetOf(iec103.DataSet{GIN: iec103.GIN{Group: 1, Entry: 2}, KOD: iec103.KODActualValue, Value: iec103.Float32s(float32(math.Inf(-1)))})
+	e := DescElementOf(iec103.DescElement{KOD: iec103.KODActualValue, Value: iec103.Float32s(float32(math.NaN()))})
+	if d.Values[0] != nil || fmt.Sprint(d.NonFinite) != "[-Inf]" || e.Values[0] != nil || fmt.Sprint(e.NonFinite) != "[NaN]" {
+		t.Errorf("data set %+v, description element %+v", d, e)
+	}
+	m := MessageOf(iec103.New(iec103.CauseSpontaneous, 1, 160, 73, iec103.RelTimeMeasurand{SCL: float32(math.Inf(1))}))
+	if m.SCL != nil || m.NonFinite != "+Inf" || !strings.Contains(m.Summary(), "scl=+Inf") {
+		t.Errorf("message %+v: %s", m, m.Summary())
+	}
 }

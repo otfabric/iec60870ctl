@@ -4,8 +4,11 @@ package client
 
 import (
 	"context"
+	"strings"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/envflag"
+	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
@@ -36,8 +39,11 @@ activation confirmation of the station.
   select   select only, to see whether the station accepts the selection
   cancel   select, then deactivate the selection (cause "deactivation")
 
-A selection belongs to the connection that made it and ends with it, so "select" and
-"cancel" operate nothing: they show how the station handles the two steps.
+"select" and "cancel" execute nothing: they show how the station handles the two steps.
+"cancel" deactivates its selection at once; after "select" the selection stays until the
+station ends it. The simulated station of "server start" ends a selection with the
+connection that made it; a real station may keep it until its own select time-out, and
+meanwhile refuse a command for that object from the control centre.
 
 --qualifier is the qualifier of command (none, short, long or persistent pulse) for
 switching commands, or the QL number 0-127 for set points. --time-tag sends the
@@ -79,8 +85,19 @@ address") ends with exit code 6.`,
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckCommand(&cfg) },
-			func(ctx context.Context) (any, error) { return iec.Command(ctx, &cfg, cmd.ErrOrStderr()) })
+			func() error {
+				// The procedure and the qualifier are taken only from the command line. Without
+				// --mode the procedure would be execute, which does more than a select or a
+				// cancel of the variable: the command refuses instead.
+				if err := envflag.NotFromEnvironment(cmd, "mode"); err != nil {
+					return errs.InvalidInput(errs.CodeInvalidFlagCombination, err.Error(), nil)
+				}
+				envflag.CommandLineOnly(cmd, "qualifier")
+				return iec.CheckCommand(&cfg)
+			},
+			func(ctx context.Context) (any, error) {
+				return iec.Command(ctx, &cfg, cmd.ErrOrStderr())
+			})
 	}
 	return cmd
 }
@@ -113,8 +130,19 @@ sent once and not repeated.`,
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckClock(&cfg) },
-			func(ctx context.Context) (any, error) { return iec.Clock(ctx, &cfg, cmd.ErrOrStderr()) })
+			func() error {
+				// A time other than now, and the broadcast address, are taken only from the
+				// command line.
+				var flags []string
+				if t := strings.TrimSpace(cfg.Time); t != "" && !strings.EqualFold(t, "now") {
+					flags = append(flags, "time")
+				}
+				commandLineOnly(cmd, cfg.CommonAddr, flags...)
+				return iec.CheckClock(&cfg)
+			},
+			func(ctx context.Context) (any, error) {
+				return iec.Clock(ctx, &cfg, cmd.ErrOrStderr())
+			})
 	}
 	return cmd
 }
@@ -144,8 +172,13 @@ THIS CHANGES THE STATION: a process reset restarts it, and it may drop its conne
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckReset(&cfg) },
-			func(ctx context.Context) (any, error) { return iec.Reset(ctx, &cfg, cmd.ErrOrStderr()) })
+			func() error {
+				commandLineOnly(cmd, cfg.CommonAddr) // the broadcast address: command line only
+				return iec.CheckReset(&cfg)
+			},
+			func(ctx context.Context) (any, error) {
+				return iec.Reset(ctx, &cfg, cmd.ErrOrStderr())
+			})
 	}
 	return cmd
 }

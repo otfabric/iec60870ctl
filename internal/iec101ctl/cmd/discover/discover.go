@@ -28,8 +28,10 @@ The probe opens a TCP connection and sends one request status of link (function 
 --link-address, with the link address field --link-address-size and the link mode
 --link-mode, and waits --timeout for the status of link. A station answers it in any
 state, before its link is reset: the probe does not bring up the link and asks for no
-data. A port that accepts the connection but does not answer is listed as "open"; with
-other link parameters it may still be a station.
+data. With --link-mode balanced a station may send its own data while the probe is
+connected; the probe answers it with a negative acknowledgement, and the station keeps it.
+A port that accepts the connection but does not answer is listed as "open"; with other
+link parameters it may still be a station.
 
 --subnets takes CIDR prefixes (192.168.1.0/24), ranges on the last octet (192.168.1.10-20)
 and single addresses or host names. More than 4096 hosts need --force-large-scan.

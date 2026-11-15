@@ -6,7 +6,9 @@ package client
 import (
 	"sort"
 
+	"github.com/otfabric/go-iec60870-5/asdu"
 	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/envflag"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/runner"
@@ -25,7 +27,9 @@ station does: open the connection, start data transfer (STARTDT), run one applic
 function and close the connection again.
 
 Every command takes the station as --url (tcp://host[:port] or tls://host[:port]) or as
---ip with --port, and the common address of the station as --ca. Protocol parameters
+--ip with --port, and the common address of the station as --ca. The scheme of --url
+decides whether TLS is used: a TLS flag with a tcp:// URL is refused (exit 2) before
+any connection; with --ip, a TLS flag turns TLS on. Protocol parameters
 (--k, --w, --t0 to --t3) and the ASDU field sizes (--cot-size, --ca-size, --ioa-size)
 default to the values of IEC 60870-5-104 and must match the station.
 
@@ -100,6 +104,18 @@ func typeCompletion(cmd *cobra.Command) {
 	names := iec.TypeNames()
 	sort.Strings(names)
 	_ = cli.RegisterEnumFlagCompletion(cmd, "type", names)
+}
+
+// commandLineOnly takes the parameters of a request that changes a station only from the
+// command line ([envflag.CommandLineOnly]): a value that came from the environment is not
+// used, the flag gets its built-in default back, and one line on stderr names the variable
+// and the flag. That is flags always, and --ca only when it is the broadcast address, which
+// reaches every station behind the connection. Commands call it before they validate.
+func commandLineOnly(cmd *cobra.Command, ca uint16, flags ...string) {
+	if ca == uint16(asdu.Broadcast) {
+		flags = append(flags, "ca")
+	}
+	envflag.CommandLineOnly(cmd, flags...)
 }
 
 // wire loads cfg from the environment, binds its flags to cmd and registers completions.

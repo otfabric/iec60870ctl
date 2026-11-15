@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -148,7 +149,7 @@ func asduOf(t *testing.T, a *iec102.ASDU) []byte {
 // bounded runs the command and checks that it ends within limit with the kind and code.
 func bounded(t *testing.T, limit time.Duration, kind errs.Kind, code string, run func(ctx context.Context) error) {
 	t.Helper()
-	before := runtime.NumGoroutine()
+	before := goroutines()
 	start := time.Now()
 	c, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -160,19 +161,47 @@ func bounded(t *testing.T, limit time.Duration, kind errs.Kind, code string, run
 	if !ok || e.Kind != kind || (code != "" && e.Code != code) {
 		t.Errorf("error %v (%+v), want %s/%s", err, e, kind, code)
 	}
-	noLeak(t, before)
+	allEnded(t, before)
 }
 
-// noLeak waits for the goroutines of a command to end.
-func noLeak(t *testing.T, before int) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+// goroutines returns the stacks of the goroutines of the process, by goroutine ID.
+func goroutines() map[string]string {
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
 	}
-	if n := runtime.NumGoroutine(); n > before+2 {
-		buf := make([]byte, 1<<16)
-		t.Errorf("%d goroutines left, %d before:\n%s", n, before, buf[:runtime.Stack(buf, true)])
+	out := map[string]string{}
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		id, _, _ := strings.Cut(strings.TrimPrefix(g, "goroutine "), " ")
+		out[id] = g
+	}
+	return out
+}
+
+// allEnded waits up to 3 s for every goroutine that is not in before to end, and reports the
+// ones that are left with their stacks: no goroutine started since before may outlive what
+// started it.
+func allEnded(t *testing.T, before map[string]string) {
+	t.Helper()
+	var left []string
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		left = left[:0]
+		for id, g := range goroutines() {
+			if _, ok := before[id]; !ok {
+				left = append(left, g)
+			}
+		}
+		if len(left) == 0 || time.Now().After(deadline) {
+			break
+		}
+	}
+	if len(left) > 0 {
+		t.Errorf("%d goroutines left that were not there before:\n%s", len(left), strings.Join(left, "\n\n"))
 	}
 }
 
@@ -327,7 +356,7 @@ func TestChaosLine(t *testing.T) {
 	s := stationtest.Start(t)
 	for seed := range chaosSeeds(t) {
 		t.Run("seed"+strconv.Itoa(seed), func(t *testing.T) {
-			before := runtime.NumGoroutine()
+			before := goroutines()
 			p := newChaosProxy(t, s.Addr, uint64(seed))
 			c := config.TotalsConfig{ConnConfig: quick("tcp://" + p.l.Addr().String()).ConnConfig, Record: 11, First: 1, Last: 8, From: "2026-01-01", To: "2026-01-02"}
 			c.Timeout = 2000
@@ -350,7 +379,7 @@ func TestChaosLine(t *testing.T) {
 				t.Errorf("internal error %v", err)
 			}
 			p.close()
-			noLeak(t, before)
+			allEnded(t, before)
 		})
 	}
 }

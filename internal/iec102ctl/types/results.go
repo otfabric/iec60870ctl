@@ -527,7 +527,7 @@ func (r *TypesResult) TableRows() [][]string {
 type ServerEvent struct {
 	Timestamp string `json:"timestamp"`
 	// Event is "listening", "connected", "busy", "link-up", "disconnected", "request",
-	// "answer", "login", "logout", "set-time", "refused" or "stopping".
+	// "login", "logout", "set-time", "refused", "warning", "error" or "stopping".
 	Event  string `json:"event"`
 	Remote string `json:"remote,omitempty"`
 	// CommonAddr, Record, Type and Cot name the ASDU an event is about.

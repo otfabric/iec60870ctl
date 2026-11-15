@@ -3,6 +3,7 @@
 package station
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,19 +16,26 @@ import (
 )
 
 // The length a directory reports fits the 24 bits of a length of file; what does not fit is
-// reported as the largest length, never wrapped.
+// reported as the largest length, never wrapped. The lengths beyond 32 bits are those of a
+// 64-bit int; a platform with a 32-bit int has no such length.
 func TestFileLengthBounds(t *testing.T) {
-	for n, want := range map[int]uint32{
+	for n, want := range map[int64]uint32{
 		0:                      0,
 		1:                      1,
 		asdu.MaxFileLength - 1: asdu.MaxFileLength - 1,
 		asdu.MaxFileLength:     asdu.MaxFileLength,
 		asdu.MaxFileLength + 1: asdu.MaxFileLength,
+		math.MaxInt32:          asdu.MaxFileLength,
 		1 << 32:                asdu.MaxFileLength,
 		1<<32 + 5:              asdu.MaxFileLength, // would wrap to 5 as a uint32
+		math.MaxInt64:          asdu.MaxFileLength,
 		-1:                     asdu.MaxFileLength,
+		math.MinInt32:          asdu.MaxFileLength,
 	} {
-		if got := fileLength(n); got != want {
+		if int64(int(n)) != n {
+			continue // no int of this platform
+		}
+		if got := fileLength(int(n)); got != want {
 			t.Errorf("fileLength(%d) = %d, want %d", n, got, want)
 		}
 	}

@@ -72,13 +72,15 @@ A period that the meter split over several ASDUs is joined into one.
 |---------|------|
 | `listening` | once, when the meter accepts lines (`remote`: the address; `detail`: the model's name and addresses) |
 | `connected`, `disconnected` | a TCP connection |
-| `busy` | a connection that arrived while a line was served, closed at once |
+| `busy` | a connection that arrived while a line was served: closed after waiting up to half a second for that line to end, or at once while four connections wait; also an accept that failed (`detail` names the error), after which the server accepts again |
 | `link-up` | the controlling station reset the link |
 | `request` | an ASDU in control direction (`type`, `ca`, `record`, `cot`; `detail`: the range or period read) |
 | `login` | C_AC_NA_2 (`detail`: `"access key accepted"` or `"access key refused"`) |
 | `logout` | C_FS_NA_2 |
 | `set-time` | C_CS_TA_2 (`detail`: the time b, with ` SU` when the bit is set) |
 | `refused` | a request mirrored with a cause of refusal or the P/N bit (`cot`, `detail`: the cause) |
+| `warning` | an answer that could not be queued (`type`, `ca`, `record` of the request; `detail`: why; the request ends without its termination), or a warning of go-iec60870-5's server, such as an ASDU it could not decode (`detail`) |
+| `error` | an error of go-iec60870-5's server (`detail`) |
 | `stopping` | once, when the server stops |
 
 ## Streams and stderr

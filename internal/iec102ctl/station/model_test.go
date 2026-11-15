@@ -5,6 +5,7 @@ package station
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -119,21 +120,24 @@ func FuzzModel(f *testing.F) {
 	f.Add([]byte(`{"station": {"clock": "2026-01-01T00:00:00.000"}, "totals": [{"record": 1, "kind": "absolute", "periods": [{"end": "2026-01-01", "totals": [{"address": 1, "value": 1}]}]}]}`))
 	f.Add([]byte("station: {}\nevents: [{record: 1, points: [{address: 1, on: true, time: 2026-01-01T00:00:00}]}]"))
 	f.Add([]byte("totals: [{record: 1, kind: absolute, generate: {start: 2026-01-01, interval: 1h, count: 5, totals: [{address: 1, step: 2}]}}]"))
+	f.Add([]byte("totals: [{record: 1, kind: absolute, generate: {start: 2026-01-01, interval: 1m, count: 100000, totals: [{address: 1}, {address: 2}, {address: 3}]}}]"))
+	f.Add([]byte("totals: [{record: 1, kind: absolute, generate: {start: 2026-01-01, interval: 1m, count: 100000, totals: [{address: 1}, {address: 1}]}}]"))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<16 {
 			return
 		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
 		m, err := Parse(data)
 		if err != nil {
 			return
 		}
-		// Bound the work a fuzzed generator may ask for.
-		for _, l := range m.Totals {
-			if l.Generate != nil && l.Generate.Count > 1000 {
-				return
-			}
+		err = m.Validate(time.UTC)
+		runtime.ReadMemStats(&after)
+		if alloc, budget := after.TotalAlloc-before.TotalAlloc, allocBudget(m, len(data)); alloc > budget {
+			t.Fatalf("Parse and Validate allocated %d octets, more than the %d the model may take (%v)", alloc, budget, err)
 		}
-		if err := m.Validate(time.UTC); err != nil {
+		if err != nil {
 			return
 		}
 		if _, err := New(m, Options{}); err != nil {
@@ -143,4 +147,23 @@ func FuzzModel(f *testing.F) {
 			t.Fatalf("a valid model makes no station: %v", err)
 		}
 	})
+}
+
+// allocBudget is what parsing and validating a model of size octets may allocate: a
+// multiple of its size, and for the periods and totals it holds within the limits (listed
+// and generated) a share each. A model is refused before it makes more.
+func allocBudget(m *Model, size int) uint64 {
+	var periods, totals int64
+	for _, l := range m.Totals {
+		periods += int64(len(l.Periods))
+		for _, p := range l.Periods {
+			totals += int64(len(p.Totals))
+		}
+		if g := l.Generate; g != nil && g.Count > 0 && g.Count <= MaxPeriods {
+			periods += int64(g.Count)
+			totals += int64(g.Count) * int64(len(g.Totals))
+		}
+	}
+	periods, totals = min(periods, MaxPeriods), min(totals, MaxTotals)
+	return uint64(16<<20 + 64*int64(size) + 1024*periods + 128*totals)
 }

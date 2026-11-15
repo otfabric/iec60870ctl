@@ -15,6 +15,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,12 +87,12 @@ func TestHostileMaster(t *testing.T) {
 	}
 	for seed := range chaosSeeds(t) {
 		t.Run("seed"+strconv.Itoa(seed), func(t *testing.T) {
-			before := runtime.NumGoroutine()
+			before := goroutines()
 			rng := rand.New(rand.NewPCG(uint64(seed), 7))
 			a, b := net.Pipe()
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
-			go func() { defer close(done); st.Serve(ctx, a, "hostile") }()
+			go func() { defer close(done); _ = st.Serve(ctx, a, "hostile") }()
 			// Read whatever the station answers, so that it never blocks on the pipe.
 			drained := make(chan struct{})
 			go func() {
@@ -132,14 +133,49 @@ func TestHostileMaster(t *testing.T) {
 				t.Fatalf("after the hostile master: %v", err)
 			}
 			_ = c.Close()
-			deadline := time.Now().Add(3 * time.Second)
-			for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
-				time.Sleep(10 * time.Millisecond)
-			}
-			if n := runtime.NumGoroutine(); n > before+2 {
-				t.Errorf("%d goroutines left, %d before", n, before)
-			}
+			allEnded(t, before)
 		})
+	}
+}
+
+// goroutines returns the stacks of the goroutines of the process, by goroutine ID.
+func goroutines() map[string]string {
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	out := map[string]string{}
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		id, _, _ := strings.Cut(strings.TrimPrefix(g, "goroutine "), " ")
+		out[id] = g
+	}
+	return out
+}
+
+// allEnded waits up to 3 s for every goroutine that is not in before to end, and reports the
+// ones that are left with their stacks: no goroutine started since before may outlive what
+// started it.
+func allEnded(t *testing.T, before map[string]string) {
+	t.Helper()
+	var left []string
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		left = left[:0]
+		for id, g := range goroutines() {
+			if _, ok := before[id]; !ok {
+				left = append(left, g)
+			}
+		}
+		if len(left) == 0 || time.Now().After(deadline) {
+			break
+		}
+	}
+	if len(left) > 0 {
+		t.Errorf("%d goroutines left that were not there before:\n%s", len(left), strings.Join(left, "\n\n"))
 	}
 }
 
@@ -148,7 +184,7 @@ func TestHostileMaster(t *testing.T) {
 func serveClient(t *testing.T, st *Station) *client.Client {
 	t.Helper()
 	a, b := net.Pipe()
-	go st.Serve(context.Background(), a, "pipe")
+	go func() { _ = st.Serve(context.Background(), a, "pipe") }()
 	c, err := client.New(b, client.Config{LinkAddr: 1, CommonAddr: 1, RequestTimeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)

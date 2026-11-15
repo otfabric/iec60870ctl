@@ -38,13 +38,18 @@ func (r Ranges) Contains(n uint32) bool {
 	return false
 }
 
-// Count returns how many numbers the set names.
+// Count returns how many numbers the set names, at most maxListed+1: a set of more than
+// maxListed numbers counts as maxListed+1. The sum is taken in 64 bits, so that it is the
+// same on every platform.
 func (r Ranges) Count() int {
-	n := 0
+	var n int64
 	for _, x := range r {
-		n += int(x.Hi-x.Lo) + 1
+		n += int64(x.Hi-x.Lo) + 1
+		if n > maxListed {
+			return maxListed + 1
+		}
 	}
-	return n
+	return int(n)
 }
 
 // Each calls f for every number of the set, in the order given.
@@ -107,7 +112,7 @@ func ParseIOAs(s string) (Ranges, error) {
 		return nil, err
 	}
 	if r.Count() > maxListed {
-		return nil, fmt.Errorf("too many information object addresses: %d, the maximum is %d", r.Count(), maxListed)
+		return nil, fmt.Errorf("too many information object addresses: more than %d", maxListed)
 	}
 	return r, nil
 }

@@ -24,8 +24,12 @@ type Point struct {
 	Test       bool   `json:"test,omitempty"`
 	Originator uint8  `json:"originator,omitempty"`
 	// Value is a boolean for single points, a string for double points and step directions,
-	// and a number for everything else. Null for types without a value.
+	// and a number for everything else. Null for types without a value, and for a NaN or
+	// infinite float, which NonFinite then names.
 	Value any `json:"value"`
+	// NonFinite names a float JSON has no number for: "NaN", "+Inf" or "-Inf". Value is
+	// then null. Omitted for every other value.
+	NonFinite string `json:"non_finite,omitempty"`
 	// Quality is "good" or the set flags joined with "|" (for example "NT|IV"). Empty for
 	// types without a quality descriptor.
 	Quality string `json:"quality,omitempty"`
@@ -43,6 +47,9 @@ func (p Point) ValueText() string {
 	switch v := p.Value.(type) {
 	case nil:
 		s = "-"
+		if p.NonFinite != "" {
+			s = p.NonFinite
+		}
 	case bool:
 		s = "off"
 		if v {

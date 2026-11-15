@@ -126,7 +126,7 @@ func StartModel(t testing.TB, m *station.Model, opts station.Options) *Station {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = line.Serve(ctx, ln, func(ctx context.Context, c line.Conn) { st.Serve(ctx, c, c.Remote) }, nil)
+		_ = line.Serve(ctx, ln, func(ctx context.Context, c line.Conn) { _ = st.Serve(ctx, c, c.Remote) }, nil, nil)
 	}()
 	t.Cleanup(func() {
 		cancel()

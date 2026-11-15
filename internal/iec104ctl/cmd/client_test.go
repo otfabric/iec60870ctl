@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/station"
@@ -269,21 +268,12 @@ func TestCommand(t *testing.T) {
 		cli(t, st, "command", "--type", "single", "--ioa", "5007", "--value", "on", "--wait-termination", "100").want(t, 0).has(t, "termination", "received")
 	})
 	t.Run("nothing is sent when the input is wrong", func(t *testing.T) {
-		commands := func() (n int) {
-			for _, e := range st.Events() {
-				if e.Event == "command" {
-					n++
-				}
-			}
-			return n
-		}
-		// The station logs a command when it has handled it, which can be
-		// after the run that sent it has ended: count from a quiet station.
-		before := commands()
-		for quiet := time.Now(); time.Since(quiet) < 100*time.Millisecond; time.Sleep(5 * time.Millisecond) {
-			if n := commands(); n != before {
-				before, quiet = n, time.Now()
-			}
+		// The runs go to a listener that counts the connections made to it: a command whose
+		// input is not valid ends before it connects, so nothing can be sent.
+		_, port, noneConnected := countingListener(t)
+		command := func(args ...string) result {
+			t.Helper()
+			return run(t, append([]string{"client", "command", "--ip", "127.0.0.1", "--port", port, "--t1", "2", "--t2", "1"}, args...)...)
 		}
 		for _, args := range [][]string{
 			{"--type", "single", "--ioa", "5000", "--value", "maybe"},
@@ -305,12 +295,10 @@ func TestCommand(t *testing.T) {
 			{"--type", "M_SP_NA_1", "--ioa", "5000", "--value", "on"},
 			{"--type", "teleport", "--ioa", "5000", "--value", "on"},
 		} {
-			cli(t, st, append([]string{"command"}, args...)...).want(t, 3)
+			command(args...).want(t, 3)
 		}
-		cli(t, st, "command", "--type", "single", "--value", "on").want(t, 2)
-		if n := commands(); n != before {
-			t.Errorf("the station received %d commands that were not valid", n-before)
-		}
+		command("--type", "single", "--value", "on").want(t, 2)
+		noneConnected("a command whose input is not valid")
 	})
 }
 

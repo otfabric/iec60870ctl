@@ -25,8 +25,10 @@ and read it from another:
 iec102ctl client info --url tcp://127.0.0.1:2401
 iec102ctl client time --url tcp://127.0.0.1:2401
 
-# The hourly load profile of 1 January, absolute values, in an REE session
-iec102ctl client totals --url tcp://127.0.0.1:2401 --record 11 --from 2026-01-01T01:00 --to 2026-01-02T00:00 --access-key 7
+# The hourly load profile of 1 January, absolute values, in an REE session (the demo
+# meter's access key is 7)
+echo 7 > meter.key
+iec102ctl client totals --url tcp://127.0.0.1:2401 --record 11 --from 2026-01-01T01:00 --to 2026-01-02T00:00 --access-key-file meter.key
 
 # The same as increments, as a table
 iec102ctl client totals --url tcp://127.0.0.1:2401 --kind incremental --from 2026-01-01 --to 2026-01-02 --format table
@@ -35,9 +37,9 @@ iec102ctl client totals --url tcp://127.0.0.1:2401 --kind incremental --from 202
 iec102ctl client events --url tcp://127.0.0.1:2401 --record 52
 
 # REE: tariff information of contract I, contracted powers, set the clock
-iec102ctl client ree tariffs --url tcp://127.0.0.1:2401 --access-key 7
-iec102ctl client ree contracted-powers --url tcp://127.0.0.1:2401 --access-key 7
-iec102ctl client ree set-time --url tcp://127.0.0.1:2401 --access-key 7
+iec102ctl client ree tariffs --url tcp://127.0.0.1:2401 --access-key-file meter.key
+iec102ctl client ree contracted-powers --url tcp://127.0.0.1:2401 --access-key-file meter.key
+iec102ctl client ree set-time --url tcp://127.0.0.1:2401 --access-key-file meter.key
 ```
 
 ## IEC 102 in two minutes
@@ -61,13 +63,16 @@ Every link and ASDU parameter must match the meter: the link address and its siz
 | `--link-timeout`, `--link-retries` | how long to wait for the answer to a frame, and how often to repeat it with the same frame count bit |
 | `--timeout` | milliseconds for connecting, starting the link and each request (30000) |
 | `--profile` | `standard`, or `ree` to decode the types of the REE profile |
-| `--access-key`, `--access-key-file` | the REE access key: the operation runs in a session (C_AC_NA_2 before, C_FS_NA_2 after); implies `--profile ree` |
+| `--access-key-file` | a file holding the REE access key (or give it with `IEC102CTL_ACCESS_KEY`): the operation runs in a session (C_AC_NA_2 before, C_FS_NA_2 after); implies `--profile ree` |
+| `--access-key` | the access key on the command line: deprecated, because other users of the machine can see it in the process list; still used, with a warning on stderr |
 | `--format` | `text`, `json` or `table` |
 | `--debug` | trace every frame sent and received to stderr (the access key is not shown), and the causes of an error |
 
 A line that is closed during the link start-up is busy (a terminal server, an interop image and `iec102ctl server start` serve one controlling station at a time); it is opened again after 100 ms and after 400 ms more, since nothing but the link start-up was sent. Any other failure is not retried.
 
-Every flag has an environment variable, `IEC102CTL_<FLAG>` (for example `IEC102CTL_ACCESS_KEY`, `IEC102CTL_URL`, `IEC102CTL_FORMAT`). The access key is never printed; prefer `IEC102CTL_ACCESS_KEY` or `--access-key-file` to the flag, which other users of the machine can see in the process list.
+Every flag has an environment variable, `IEC102CTL_<FLAG>` (for example `IEC102CTL_ACCESS_KEY`, `IEC102CTL_URL`, `IEC102CTL_FORMAT`). The access key is never printed; give it with `IEC102CTL_ACCESS_KEY` or `--access-key-file`, not with `--access-key`, which other users of the machine can see in the process list (the flag still works, with a warning on stderr).
+
+The flags that decide what a request changes or sends are taken only from the command line: `--time` of `client ree set-time` and `--cause`, `--record`, `--data` and `--objects` of `client request` (`--type` must be on the command line anyway). Their variables (`IEC102CTL_TIME`, `IEC102CTL_CAUSE`, `IEC102CTL_RECORD`, `IEC102CTL_DATA`, `IEC102CTL_OBJECTS`) are not used by these two commands: the flag keeps its built-in default (`--time now`, `--cause activation`, `--record 0`, no `--data`, `--objects -1`), and one line on stderr names each variable that is set, for example `notice: IEC102CTL_TIME=2026-03-01T00:00:00.000 is not used: --time is taken only from the command line`. The read commands still take `IEC102CTL_RECORD` (`totals`, `events` and the REE reads).
 
 ## Commands
 
@@ -104,7 +109,7 @@ Reads integrated totals of `--record`. `--kind` chooses the totals (`operational
 
 ```console
 iec102ctl client totals --url tcp://10.0.0.20 --record 11 --from 2026-01-31T01:00 --to 2026-02-01T00:00
-iec102ctl client totals --url tcp://10.0.0.20 --kind incremental --first 1 --last 1 --from 2026-01-31 --to 2026-02-01 --access-key 7 --format table
+iec102ctl client totals --url tcp://10.0.0.20 --kind incremental --first 1 --last 1 --from 2026-01-31 --to 2026-02-01 --access-key-file meter.key --format table
 iec102ctl client totals --url tcp://10.0.0.20 --record 1 --kind accounting --oldest
 iec102ctl client totals --url tcp://10.0.0.20 --type C_CI_NM_2 --period 2026-01-31T13:00 --first 1 --last 2
 ```
@@ -125,7 +130,7 @@ iec102ctl client events --url tcp://10.0.0.20 --record 52 --from 2026-01-01 --to
 Sends one ASDU built from `--type`, `--cause`, `--record`, `--data` (hex) and `--objects` (the VSQ number), and prints every ASDU the meter answers until `--until` (`reply`, `confirmation`, `termination`, or `auto`: termination for cause activation, else reply). For a type iec102ctl has no command for; the answers' objects are shown as hex. It is sent once and never repeated by iec102ctl. **It may change the meter**: the type decides what the request does.
 
 ```console
-iec102ctl client request --url tcp://10.0.0.20 --type C_RM_NA_2 --access-key 7
+iec102ctl client request --url tcp://10.0.0.20 --type C_RM_NA_2 --access-key-file meter.key
 iec102ctl client request --url tcp://10.0.0.20 --type 103 --cause request --format json
 ```
 
@@ -142,7 +147,7 @@ iec102ctl client types --profile ree --direction control
 Opens an REE session with the access key and closes it again; nothing else is sent. A refused key ends with exit code 6 and `login_refused`.
 
 ```console
-iec102ctl client ree login --url tcp://10.0.0.20 --access-key 7
+iec102ctl client ree login --url tcp://10.0.0.20 --access-key-file meter.key
 IEC102CTL_ACCESS_KEY=7 iec102ctl client ree login --url serial:///dev/ttyUSB0
 ```
 
@@ -151,8 +156,8 @@ IEC102CTL_ACCESS_KEY=7 iec102ctl client ree login --url serial:///dev/ttyUSB0
 Sets the meter's clock (C_CS_TA_2 of the REE profile, confirmed with cause 7) to `--time`: `now` (the default, taken when the link is up), a time b (`2026-02-03T04:05:06.789`) or RFC 3339. **This changes the meter.** It is validated before anything is sent and sent once.
 
 ```console
-iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key 7 --timezone Europe/Madrid
-iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key 7 --time 2026-02-03T04:05:06.789
+iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key-file meter.key --timezone Europe/Madrid
+iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key-file meter.key --time 2026-02-03T04:05:06.789
 ```
 
 ### client ree tariffs
@@ -160,8 +165,8 @@ iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key 7 --time 2026-0
 Reads the tariff information of a contract register (`--register`, 134 by default; 134-136 contracts I-III, 137-139 the latent ones): current values (C_TA_VC_2), or with `--from` and `--to` the stored values of the billing periods that end in the range (C_TA_VM_2).
 
 ```console
-iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key 7
-iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key 7 --from 2025-11-01 --to 2026-01-01 --format json
+iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key-file meter.key
+iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key-file meter.key --from 2025-11-01 --to 2026-01-01 --format json
 ```
 
 ### client ree contracted-powers
@@ -169,7 +174,7 @@ iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key 7 --from 2025-11
 Reads the contracted powers (C_PC_NA_2, answered by M_PC_NA_2): the power in kW of each tariff period. There is no command to write them: no source we hold gives that request's layout.
 
 ```console
-iec102ctl client ree contracted-powers --url tcp://10.0.0.20 --access-key 7
+iec102ctl client ree contracted-powers --url tcp://10.0.0.20 --access-key-file meter.key
 ```
 
 ### client ree special-days
@@ -177,12 +182,12 @@ iec102ctl client ree contracted-powers --url tcp://10.0.0.20 --access-key 7
 Reads the special days of the tariff calendar (C_DF_NA_2, answered by M_DF_NA_2).
 
 ```console
-iec102ctl client ree special-days --url tcp://10.0.0.20 --access-key 7 --format table
+iec102ctl client ree special-days --url tcp://10.0.0.20 --access-key-file meter.key --format table
 ```
 
 ### server start
 
-Serves a simulated meter from the model `--config` (YAML or JSON; [server-config.md](server-config.md)), or the built-in demo meter, on TCP (`--listen`, `--port`, 2401 by default) or on a serial port (`--serial` with `--baud`, `--data-bits`, `--parity`, `--stop-bits`). `--link-address` and `--common-address` replace the model's; `--link-address-size`, `--ca-size` and `--timezone` set the link and the meter's clock. One line has one controlling station: a second TCP connection is closed at once (`busy`). Every event goes to stdout as text, a table row or one JSON object per line; `--debug` traces every frame to stderr. It runs until Ctrl-C or for `--duration` seconds.
+Serves a simulated meter from the model `--config` (YAML or JSON; [server-config.md](server-config.md)), or the built-in demo meter, on TCP (`--listen`, `--port`, 2401 by default) or on a serial port (`--serial` with `--baud`, `--data-bits`, `--parity`, `--stop-bits`). `--link-address` and `--common-address` replace the model's; `--link-address-size`, `--ca-size` and `--timezone` set the link and the meter's clock. One line has one controlling station: a second TCP connection waits up to half a second for the first to end and is then closed (`busy`); while four wait, a further one is closed at once. Every event goes to stdout as text, a table row or one JSON object per line; `--debug` traces every frame to stderr. It runs until Ctrl-C or for `--duration` seconds, and then exits with 0. A serial port that fails while it is served (the device is removed or closed) ends `server start --serial` with exit code 4 and `connection_lost`.
 
 ```console
 iec102ctl server start
@@ -206,4 +211,4 @@ iec102ctl server generate-config --format json --output meter.json
 
 ## Exit codes
 
-Those of [docs/exitcodes.md](../exitcodes.md), shared by the four tools: 0 success, 2 usage, 3 invalid input (validated before anything is sent), 4 transport (no line, the line was lost), 5 timeout (`link_timeout`: no meter answered the link at that address; `request_timeout`: the request was not complete in `--timeout`), 6 refused by the meter (the codes above and `login_refused`), 7 partial (the operation succeeded but the REE session did not end with a confirmed logout), 10 internal, 130 interrupted.
+Those of [docs/exitcodes.md](../exitcodes.md), shared by the four tools: 0 success, 2 usage, 3 invalid input (validated before anything is sent), 4 transport (no line, the line was lost; for `server start`: it cannot listen or open its port, or the serial port failed while it was served), 5 timeout (`link_timeout`: no meter answered the link at that address; `request_timeout`: the request was not complete in `--timeout`), 6 refused by the meter (the codes above and `login_refused`), 7 partial (the operation succeeded but the REE session did not end with a confirmed logout), 10 internal, 130 interrupted.

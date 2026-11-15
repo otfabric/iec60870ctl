@@ -71,7 +71,10 @@ channels; --format json carries every value. --output writes the record as JSON 
 microseconds and one column per channel. No other format (COMTRADE among them) is written.
 
 A transfer takes a while on a serial line: --transfer-timeout bounds it (2 minutes by
-default). The final positive acknowledgement allows the device to delete the record.`,
+default). The final positive acknowledgement allows the device to delete the record, so
+--output and --csv are created before anything is sent: a file that exists (without
+--force) or cannot be created ends the command with exit code 3 and the record stays on
+the device. When the transfer fails, the files are removed again.`,
 		Example: `
   iec103ctl client disturbance get --url tcp://10.0.0.20 --fan 7
   iec103ctl client disturbance get --url serial:///dev/ttyUSB0 --fan 7 --output fault7.json --csv fault7.csv

@@ -59,16 +59,18 @@ access key, C_FS_NA_2), sets its clock (C_CS_TA_2) and answers C_TA_VC_2, C_TA_V
 C_PC_NA_2 and C_DF_NA_2. Its reads do not depend on an open session. All answers are class
 2 data; IEC 102 has no spontaneous data.
 
-A line has one controlling station: a TCP connection that arrives while one is served is
-closed at once ("busy"). Every connection starts a fresh link and session; the clock (and
-a time set on it) lives as long as the process.
+A line has one controlling station: a TCP connection that arrives while one is served
+waits up to half a second for it to end and is then closed ("busy"); while four wait, a
+further one is closed at once. Every connection starts a fresh link and session; the
+clock (and a time set on it) lives as long as the process.
 
 Every event (connections, the link, requests, refusals, the session) is written to stdout
 as it happens: one line with --format text, one JSON object per line with --format json, or
 one table row with --format table. With --debug every frame is traced to stderr.
 
-The server runs until interrupted (Ctrl-C), or for --duration seconds. It listens on all
-interfaces by default: use --listen to restrict it.`,
+The server runs until interrupted (Ctrl-C), or for --duration seconds, and then exits with
+0; a serial port that fails while it is served ends it with exit code 4 (connection_lost).
+It listens on all interfaces by default: use --listen to restrict it.`,
 		Example: `
   # Serve the built-in demo meter on port 2401
   iec102ctl server start

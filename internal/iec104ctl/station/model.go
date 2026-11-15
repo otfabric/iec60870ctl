@@ -140,14 +140,16 @@ type UploadSpec struct {
 	// Dir, when set, is where delivered files are written, as ioa-<ioa>-name-<name>.bin
 	// (relative to the model file). Without it they are kept in memory.
 	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
-	// MaxFiles is the number of delivered files the station keeps. A delivery to another
-	// address beyond it is refused; one to an address that already holds a delivered file
-	// replaces it. 0 means DefaultUploadMaxFiles.
+	// MaxFiles is the number of delivered files the station keeps, the files being
+	// delivered included. A delivery to another address beyond it is refused; one to an
+	// address that already holds a delivered file replaces it. 0 means
+	// DefaultUploadMaxFiles.
 	MaxFiles int `yaml:"max_files,omitempty" json:"max_files,omitempty"`
 	// MaxFileSize is the largest file the station takes, in octets. 0 means
 	// DefaultUploadMaxFileSize; the protocol allows up to 16 777 215.
 	MaxFileSize int `yaml:"max_file_size,omitempty" json:"max_file_size,omitempty"`
-	// MaxTotalSize is the number of octets of all delivered files together. 0 means
+	// MaxTotalSize is the number of octets of all delivered files together, the files being
+	// delivered included with the length announced for them. 0 means
 	// DefaultUploadMaxTotalSize.
 	MaxTotalSize int `yaml:"max_total_size,omitempty" json:"max_total_size,omitempty"`
 }
@@ -220,11 +222,28 @@ var qualityFlags = map[string]asdu.Quality{
 
 const maxIOA = 1<<24 - 1
 
-// Load reads a model from a YAML or JSON file and validates it.
+// MaxModelSize is the largest model file Load reads, in octets.
+const MaxModelSize = 16 << 20
+
+// Load reads a model from a YAML or JSON file and validates it. A model of more than
+// MaxModelSize octets is refused: a regular file from its size, anything else after at
+// most one octet more is read.
 func Load(path string) (*Model, error) {
-	data, err := os.ReadFile(filepath.Clean(path))
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	tooLarge := fmt.Errorf("%s: the model is larger than %d octets", path, MaxModelSize)
+	if fi, err := f.Stat(); err == nil && fi.Mode().IsRegular() && fi.Size() > MaxModelSize {
+		return nil, tooLarge
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxModelSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxModelSize {
+		return nil, tooLarge
 	}
 	m, err := Parse(data)
 	if err != nil {
@@ -260,7 +279,8 @@ func (m *Model) resolve(path string) string {
 }
 
 // Validate checks the model, files on disk included, and reports everything that is wrong
-// with it at once.
+// with it at once. It checks the size of a file from the model or from the file system and
+// reads no file: [New] reads each file once.
 func (m *Model) Validate() error {
 	var problems []string
 	bad := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -369,15 +389,15 @@ func (m *Model) Validate() error {
 			bad("%s (ioa %d): size and section_size cannot be negative", what, f.IOA)
 			continue
 		}
-		data, err := m.fileContent(f)
+		size, err := m.fileSize(f)
 		switch {
 		case err != nil:
 			bad("%s (ioa %d): %v", what, f.IOA, err)
-		case len(data) == 0:
+		case size == 0:
 			bad("%s (ioa %d): the file is empty", what, f.IOA)
-		case len(data) > maxIOA:
-			bad("%s (ioa %d): %d octets: the maximum is %d", what, f.IOA, len(data), maxIOA)
-		case (len(data)+sectionSize(f)-1)/sectionSize(f) > 254:
+		case size > maxIOA:
+			bad("%s (ioa %d): %d octets: the maximum is %d", what, f.IOA, size, maxIOA)
+		case (size+int64(sectionSize(f))-1)/int64(sectionSize(f)) > 254:
 			bad("%s (ioa %d): more than 254 sections: use a larger section_size", what, f.IOA)
 		}
 	}
@@ -407,13 +427,72 @@ func sectionSize(f FileSpec) int {
 	return 2048
 }
 
-// fileContent returns the octets of a file of the model.
+// fileSize returns the number of octets of a file of the model without reading it: the
+// size of the model, or for a path the size the file system reports. A path must name a
+// regular file that can be opened.
+func (m *Model) fileSize(f FileSpec) (int64, error) {
+	switch {
+	case f.Path != "":
+		path := filepath.Clean(m.resolve(f.Path))
+		fi, err := regularFile(path)
+		if err != nil {
+			return 0, err
+		}
+		r, err := os.Open(path)
+		if err != nil {
+			return 0, err
+		}
+		_ = r.Close()
+		return fi.Size(), nil
+	case f.Content != "":
+		return int64(len(f.Content)), nil
+	}
+	return int64(f.Size), nil
+}
+
+// regularFile returns what the file system reports of path, or an error when it is not a
+// regular file (a directory, a device, a named pipe).
+func regularFile(path string) (os.FileInfo, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	return fi, nil
+}
+
+// fileContent returns the octets of a file of the model, which holds at most maxIOA: a
+// size or a file of more is refused before anything is made or read beyond that.
 func (m *Model) fileContent(f FileSpec) ([]byte, error) {
 	switch {
 	case f.Path != "":
-		return os.ReadFile(filepath.Clean(m.resolve(f.Path)))
+		path := filepath.Clean(m.resolve(f.Path))
+		if _, err := regularFile(path); err != nil {
+			return nil, err
+		}
+		r, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = r.Close() }()
+		if fi, err := r.Stat(); err != nil || !fi.Mode().IsRegular() || fi.Size() > maxIOA {
+			return nil, fmt.Errorf("%s: not a regular file of at most %d octets", path, maxIOA)
+		}
+		data, err := io.ReadAll(io.LimitReader(r, maxIOA+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > maxIOA {
+			return nil, fmt.Errorf("%s: more than %d octets", path, maxIOA)
+		}
+		return data, nil
 	case f.Content != "":
 		return []byte(f.Content), nil
+	}
+	if f.Size < 0 || f.Size > maxIOA {
+		return nil, fmt.Errorf("size %d: use 1-%d", f.Size, maxIOA)
 	}
 	data := make([]byte, f.Size)
 	for i := range data {
@@ -425,6 +504,14 @@ func (m *Model) fileContent(f FileSpec) ([]byte, error) {
 func (s *SimSpec) validate(typ asdu.TypeID) error {
 	if time.Duration(s.Interval) < 50*time.Millisecond {
 		return fmt.Errorf("interval %s: use at least 50ms", time.Duration(s.Interval))
+	}
+	for _, b := range []struct {
+		name string
+		v    float64
+	}{{"min", s.Min}, {"max", s.Max}, {"step", s.Step}} {
+		if math.IsNaN(b.v) || math.IsInf(b.v, 0) {
+			return fmt.Errorf("%s %v: use a finite number", b.name, b.v)
+		}
 	}
 	numeric := typ != asdu.M_SP_NA_1 && typ != asdu.M_DP_NA_1
 	switch strings.ToLower(s.Mode) {

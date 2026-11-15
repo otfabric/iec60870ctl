@@ -15,6 +15,7 @@ import (
 	"github.com/otfabric/go-iec60870-5/asdu"
 	"github.com/otfabric/go-iec60870-5/iec101"
 	"github.com/otfabric/go-iec60870-5/iec101/server"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec101ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/iec101ctl/types"
 )
@@ -452,7 +453,7 @@ func (c *conn) counterInterrogation(s *server.Server, req *asdu.ASDU, ci asdu.Co
 		st.event(c.ev("counter-interrogation", fmt.Sprintf("refused: request %d", ci.Request)))
 		return
 	}
-	if req.Cause != asdu.CauseActivation || ci.Freeze > asdu.FreezeWithReset || (ci.Freeze != asdu.FreezeRead && !st.freeze) {
+	if req.Cause != asdu.CauseActivation || ci.Freeze > asdu.FreezeResetOnly || (ci.Freeze != asdu.FreezeRead && !st.freeze) {
 		_ = s.Negative(req)
 		st.event(c.ev("counter-interrogation", fmt.Sprintf("refused: freeze %d, cause %s", ci.Freeze, req.Cause)))
 		return
@@ -754,7 +755,7 @@ func (c *conn) command(s *server.Server, req *asdu.ASDU) {
 		return
 	}
 	v, sel, key := commanded(obj)
-	e.Value = v
+	e.Value, e.NonFinite = format.Finite(v)
 
 	now := st.opts.Now()
 	st.mu.Lock()
@@ -779,6 +780,11 @@ func (c *conn) command(s *server.Server, req *asdu.ASDU) {
 	}
 	if !valid(obj) {
 		refuse("value not permitted", 0)
+		return
+	}
+	if e.NonFinite != "" {
+		// No point holds a NaN or an infinite value: the set point is out of its range.
+		refuse("set point "+e.NonFinite+" is not a finite number", 0)
 		return
 	}
 	if sel {

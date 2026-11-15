@@ -81,10 +81,15 @@ files:
       iec104ctl demo station
       This file is served by the file transfer of IEC 60870-5-104.
 
-# Take the files controlling stations deliver. Add "dir: ./uploads" to keep them on disk.
-# At most max_files (64) files of max_file_size (1 MiB), max_total_size (16 MiB) together.
-uploads:
-  accept: true
+# Files controlling stations deliver (client file put) are refused unless the model
+# accepts them. To take them, add:
+#
+#   uploads:
+#     accept: true
+#     dir: ./uploads    # keep them on disk; without it they are kept in memory
+#
+# At most max_files (64) files of max_file_size (1 MiB), max_total_size (16 MiB) together,
+# the files being delivered included.
 `
 
 // Demo returns the built-in demo model.

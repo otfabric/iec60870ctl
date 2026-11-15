@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/cp"
+	"github.com/otfabric/go-iec60870-5/ft12"
 	"github.com/otfabric/go-iec60870-5/iec103"
 	"github.com/otfabric/go-iec60870-5/iec103/server"
 	"github.com/otfabric/go-iec60870-5/link"
@@ -46,10 +47,15 @@ type Station struct {
 	ca   uint8
 	fun  iec103.FunctionType
 
+	// periods are the toggle periods of the simulated indications, by index in
+	// m.Indications; 0 for one that is not simulated.
+	periods []time.Duration
+
 	mu      sync.Mutex
 	dpi     map[funInf]iec103.DPI
 	generic map[iec103.GIN]iec103.Value
-	staged  map[uint8][]iec103.DataSet // generic writes in progress, by RII
+	// sessions are the lines being served, with the generic writes each has staged.
+	sessions map[*session]struct{}
 }
 
 // New returns the station of model m.
@@ -73,10 +79,13 @@ func New(m *Model, opts Options) (*Station, error) {
 	}
 	s := &Station{
 		m: m, opts: opts, la: uint8(la & 0xFF), ca: uint8(ca & 0xFF), fun: iec103.FunctionType(m.Station.Identification.Fun & 0xFF),
-		dpi: map[funInf]iec103.DPI{}, generic: map[iec103.GIN]iec103.Value{}, staged: map[uint8][]iec103.DataSet{},
+		dpi: map[funInf]iec103.DPI{}, generic: map[iec103.GIN]iec103.Value{},
+		periods: make([]time.Duration, len(m.Indications)), sessions: map[*session]struct{}{},
 	}
-	for _, ind := range m.Indications {
+	for i, ind := range m.Indications {
 		s.dpi[funInf{ind.Fun, ind.Inf}] = iec103.DPI(ind.DPI & 3)
+		// Validate bounds Simulate to MinSimulate-MaxSimulate ms, which a Duration holds.
+		s.periods[i] = time.Duration(ind.Simulate) * time.Millisecond
 	}
 	for _, g := range m.Generic {
 		v, _ := g.Actual()
@@ -121,8 +130,8 @@ func (s *Station) Generic(g iec103.GIN) (iec103.Value, bool) {
 	return v, ok
 }
 
-// config returns the protection equipment configuration of one line.
-func (s *Station) config(remote string) server.Config {
+// config returns the protection equipment configuration of the line of c.
+func (s *Station) config(c *session, remote string) server.Config {
 	id := s.m.Station.Identification
 	sw, _ := hex.DecodeString(id.Software)
 	var software [4]byte
@@ -135,7 +144,7 @@ func (s *Station) config(remote string) server.Config {
 		Link: s.opts.Link, LinkAddr: s.la, CommonAddr: s.ca, Fun: s.fun,
 		Identification: iec103.IdentificationOf(uint8(id.Col&0xFF), id.ASCII, software),
 		StartCause:     start,
-		Handler:        s,
+		Handler:        c,
 		Location:       s.opts.Location,
 		SyncDelay:      -1,
 		OnTimeSync: func(t time.Time, broadcast bool) {
@@ -152,7 +161,26 @@ func (s *Station) config(remote string) server.Config {
 	if len(s.m.Disturbances) > 0 {
 		cfg.Disturbances = s
 	}
+	// A reset of the link (reset CU, reset FCB) by the controlling system drops what this
+	// line staged, as the end of the line does.
+	trace := cfg.Link.OnFrame
+	cfg.Link.OnFrame = func(tx bool, f ft12.Frame) {
+		if trace != nil {
+			trace(tx, f)
+		}
+		if !tx && isReset(f, s.la) {
+			c.clear()
+		}
+	}
 	return cfg
+}
+
+// isReset reports whether f is a reset CU or reset FCB of a controlling system to link
+// address la.
+func isReset(f ft12.Frame, la uint8) bool {
+	ctl := link.Control(f.Control)
+	return f.Kind == ft12.KindFixed && ctl.PRM() && f.Addr == uint16(la) &&
+		(ctl.Func() == link.FuncResetLink || ctl.Func() == link.FuncResetFCB)
 }
 
 func loc(l *time.Location) *time.Location {
@@ -166,16 +194,18 @@ func loc(l *time.Location) *time.Location {
 // equipment station, the measurands queued as class 2 data and the simulated changes.
 func (s *Station) Serve(ctx context.Context, rw io.ReadWriter, remote string) error {
 	w := &watched{rw: rw, closed: make(chan struct{})}
-	srv, err := server.New(w, s.config(remote))
+	c := s.open()
+	defer s.end(c)
+	srv, err := server.New(w, s.config(c, remote))
 	if err != nil {
 		return err
 	}
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 	wg.Go(func() { s.feed(srv, stop) })
-	for _, ind := range s.m.Indications {
-		if ind.Simulate > 0 {
-			wg.Go(func() { s.simulate(srv, ind, stop) })
+	for i, ind := range s.m.Indications {
+		if every := s.periods[i]; every > 0 {
+			wg.Go(func() { s.simulate(srv, ind, every, stop) })
 		}
 	}
 	// The station ends itself when a write fails, without a read failing first: the line
@@ -250,9 +280,9 @@ func (s *Station) feed(srv *server.Server, stop <-chan struct{}) {
 	}
 }
 
-// simulate toggles an indication at its period and reports the change (cause 1).
-func (s *Station) simulate(srv *server.Server, ind Indication, stop <-chan struct{}) {
-	tick := time.NewTicker(time.Duration(ind.Simulate) * time.Millisecond)
+// simulate toggles an indication every period and reports the change (cause 1).
+func (s *Station) simulate(srv *server.Server, ind Indication, every time.Duration, stop <-chan struct{}) {
+	tick := time.NewTicker(every)
 	defer tick.Stop()
 	k := funInf{ind.Fun, ind.Inf}
 	for {
@@ -274,8 +304,9 @@ func (s *Station) simulate(srv *server.Server, ind Indication, stop <-chan struc
 }
 
 // HandleASDU answers the control-direction ASDUs the protection equipment station leaves
-// to the application (server.Handler). It runs on the station's goroutine.
-func (s *Station) HandleASDU(srv *server.Server, a *iec103.ASDU) {
+// to the application (server.Handler). It runs on the station's goroutine of the line.
+func (c *session) HandleASDU(srv *server.Server, a *iec103.ASDU) {
+	s := c.s
 	switch b := a.Body.(type) {
 	case iec103.GIInit:
 		s.interrogation(srv, a, b)
@@ -284,7 +315,7 @@ func (s *Station) HandleASDU(srv *server.Server, a *iec103.ASDU) {
 	case iec103.GenericCommand:
 		s.genericRead(srv, a, b)
 	case iec103.GenericData:
-		s.genericWrite(srv, a, b)
+		s.genericWrite(srv, c, a, b)
 	}
 }
 

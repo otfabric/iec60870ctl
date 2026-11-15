@@ -410,17 +410,53 @@ func TestChannelsCSVUnevenChannels(t *testing.T) {
 	}
 }
 
-func TestWriteFileErrors(t *testing.T) {
+// The files of disturbance get are created before the transfer: an existing file without
+// --force and a file that cannot be created are invalid input, and when one cannot be
+// created the other is not left behind. --force empties an existing file.
+func TestCreateOutputs(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, "a")
-	if err := writeFile(p, []byte("x"), false); err != nil {
+	exists := filepath.Join(dir, "exists")
+	if err := os.WriteFile(exists, []byte("before"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFile(p, []byte("x"), false); codeOf(t, err) != errs.CodeOutputFileCreateFailed || kindOf(t, err) != errs.KindInvalidInput {
+	out := filepath.Join(dir, "a.json")
+	for _, c := range []struct {
+		name      string
+		json, csv string
+		force     bool
+	}{
+		{"existing file", exists, "", false},
+		{"no directory", filepath.Join(dir, "no", "such"), "", true},
+		{"existing --csv file", out, exists, false},
+		{"--csv in no directory", out, filepath.Join(dir, "no", "such.csv"), false},
+	} {
+		_, err := createOutputs(&config.DisturbanceGetConfig{Output: c.json, CSV: c.csv, Force: c.force})
+		if codeOf(t, err) != errs.CodeOutputFileCreateFailed || kindOf(t, err) != errs.KindInvalidInput {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s: %s left behind: %v", c.name, out, err)
+		}
+	}
+	files, err := createOutputs(&config.DisturbanceGetConfig{Output: out, CSV: exists, Force: true})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFile(filepath.Join(dir, "no", "such"), []byte("x"), true); kindOf(t, err) != errs.KindOutput {
+	if data, _ := os.ReadFile(exists); len(data) != 0 {
+		t.Errorf("--force kept %q", data)
+	}
+	if err := files.json.write([]byte("x")); err != nil {
 		t.Fatal(err)
+	}
+	_ = files.csv.f.Close()
+	if err := files.csv.write([]byte("x")); kindOf(t, err) != errs.KindOutput || codeOf(t, err) != errs.CodeOutputFileWriteFailed {
+		t.Errorf("write to a closed file: %v", err)
+	}
+	files.remove()
+	for _, p := range []string{out, exists} {
+		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s not removed: %v", p, err)
+		}
 	}
 }
 

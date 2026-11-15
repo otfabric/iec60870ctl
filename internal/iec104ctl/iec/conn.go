@@ -180,6 +180,9 @@ func validateSecurity(cfg *config.ConnConfig) error {
 func Open(cfg *config.ConnConfig, trace io.Writer, extra ...client.Option) (*Session, error) {
 	target, err := cfg.ResolveTarget()
 	if err != nil {
+		if e, ok := errs.As(err); ok {
+			return nil, e // a TLS flag with a tcp:// URL: a usage error
+		}
 		return nil, errs.InvalidInput(errs.CodeInvalidURL, err.Error(), err)
 	}
 	link, err := LinkParams(cfg.LinkConfig)

@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/otfabric/iec60870ctl/internal/buildinfo"
 	clihelp "github.com/otfabric/iec60870ctl/internal/cli"
@@ -91,7 +89,8 @@ IEC102CTL_FORMAT=json) prints the same as one JSON object.`,
 
 // Execute runs the root command and returns the process exit code (main should call os.Exit).
 func Execute() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// The first Ctrl-C (or SIGTERM) ends the command; a second one ends the process at once.
+	ctx, stop := clihelp.SignalContext(context.Background())
 	defer stop()
 	return Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 }

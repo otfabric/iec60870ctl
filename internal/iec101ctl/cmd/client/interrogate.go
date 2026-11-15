@@ -94,7 +94,7 @@ Anything but "read" changes the station: energy counters that are reset are gone
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckCounters(&cfg) },
+			func() error { return checkedCounters(cmd, &cfg) },
 			func(ctx context.Context) (any, error) { return iec.Counters(ctx, &cfg, cmd.ErrOrStderr()) })
 	}
 	return cmd

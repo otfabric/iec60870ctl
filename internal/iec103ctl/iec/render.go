@@ -10,6 +10,7 @@ import (
 
 	"github.com/otfabric/go-iec60870-5/cp"
 	"github.com/otfabric/go-iec60870-5/iec103"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/types"
 )
 
@@ -114,7 +115,10 @@ func MessageOf(a *iec103.ASDU) types.Message {
 		}
 	case iec103.RelTimeMeasurand:
 		scl := float64(b.SCL)
-		m.SCL, m.RET, m.FAN = &scl, u16(b.RET), u16(b.FAN)
+		if m.NonFinite = format.NonFinite(scl); m.NonFinite == "" {
+			m.SCL = &scl
+		}
+		m.RET, m.FAN = u16(b.RET), u16(b.FAN)
 		m.Time, m.TimeInvalid = TimeText(b.Time, false), b.Time.Invalid
 	case iec103.Identification:
 		m.COL, m.Manufacturer, m.Software = u8(b.COL), strings.TrimRight(b.Manufacturer(), " \x00"), hex.EncodeToString(b.Software[:])
@@ -219,9 +223,28 @@ const maxStructureDepth = 4
 
 // ValuesOf renders the elements of a GID: text, numbers, or nested structure fields; nil
 // for a data type whose elements are not rendered (see Data), or a GID that does not hold
-// what its GDD says.
-func ValuesOf(v iec103.Value) []any {
-	return valuesOf(v, 0)
+// what its GDD says. A NaN or infinite number, which JSON has no number for, is nil, and
+// nonFinite names it at its index ("NaN", "+Inf", "-Inf"; "" for every other element);
+// nonFinite is nil when every element is finite. A nested structure field carries its own
+// "non_finite".
+func ValuesOf(v iec103.Value) (values []any, nonFinite []string) {
+	return finiteValues(valuesOf(v, 0))
+}
+
+// finiteValues replaces the NaN and infinite numbers of values by nil and names them.
+func finiteValues(values []any) ([]any, []string) {
+	var names []string
+	for i, x := range values {
+		v, name := format.Finite(x)
+		if name == "" {
+			continue
+		}
+		if names == nil {
+			names = make([]string, len(values))
+		}
+		values[i], names[i] = v, name
+	}
+	return values, names
 }
 
 func valuesOf(v iec103.Value, depth int) []any {
@@ -262,7 +285,12 @@ func valuesOf(v iec103.Value, depth int) []any {
 			return nil
 		}
 		for _, f := range fields {
-			out = append(out, map[string]any{"type": DataTypeName(f.Type), "values": valuesOf(f, depth+1), "data": hex.EncodeToString(f.Data)})
+			values, nonFinite := finiteValues(valuesOf(f, depth+1))
+			field := map[string]any{"type": DataTypeName(f.Type), "values": values, "data": hex.EncodeToString(f.Data)}
+			if nonFinite != nil {
+				field["non_finite"] = nonFinite
+			}
+			out = append(out, field)
 		}
 	default:
 		return nil
@@ -282,18 +310,20 @@ func GINText(g iec103.GIN) string { return fmt.Sprintf("%d.%d", g.Group, g.Entry
 
 // DataSetOf renders a data set.
 func DataSetOf(d iec103.DataSet) types.DataSet {
+	values, nonFinite := ValuesOf(d.Value)
 	return types.DataSet{
 		GIN: GINText(d.GIN), KOD: uint8(d.KOD), KODName: KODName(d.KOD),
 		DataType: uint8(d.Value.Type), TypeName: DataTypeName(d.Value.Type), Size: d.Value.Size, Number: d.Value.Number,
-		Values: ValuesOf(d.Value), Reply: replyOf(d.Value), Data: hex.EncodeToString(d.Value.Data),
+		Values: values, NonFinite: nonFinite, Reply: replyOf(d.Value), Data: hex.EncodeToString(d.Value.Data),
 	}
 }
 
 // DescElementOf renders a description element.
 func DescElementOf(e iec103.DescElement) types.DescElement {
+	values, nonFinite := ValuesOf(e.Value)
 	return types.DescElement{
 		KOD: uint8(e.KOD), KODName: KODName(e.KOD), DataType: uint8(e.Value.Type), TypeName: DataTypeName(e.Value.Type),
-		Size: e.Value.Size, Number: e.Value.Number, Values: ValuesOf(e.Value), Reply: replyOf(e.Value), Data: hex.EncodeToString(e.Value.Data),
+		Size: e.Value.Size, Number: e.Value.Number, Values: values, NonFinite: nonFinite, Reply: replyOf(e.Value), Data: hex.EncodeToString(e.Value.Data),
 	}
 }
 
@@ -335,7 +365,21 @@ func DisturbanceOf(d *iec103.Disturbance) types.Disturbance {
 		if vals == nil {
 			vals = []int16{}
 		}
-		out.Channels = append(out.Channels, types.Channel{ACC: c.ACC, Name: ACCName(c.ACC), RPV: c.RPV, RSV: c.RSV, RFA: c.RFA, Values: vals})
+		ch := types.Channel{ACC: c.ACC, Name: ACCName(c.ACC), Values: vals}
+		for _, f := range []struct {
+			name string
+			v    float32
+			to   *any
+		}{{"rpv", c.RPV, &ch.RPV}, {"rsv", c.RSV, &ch.RSV}, {"rfa", c.RFA, &ch.RFA}} {
+			var name string
+			if *f.to, name = format.Finite(f.v); name != "" {
+				if ch.NonFinite == nil {
+					ch.NonFinite = map[string]string{}
+				}
+				ch.NonFinite[f.name] = name
+			}
+		}
+		out.Channels = append(out.Channels, ch)
 		out.NOE = max(out.NOE, len(c.Values))
 	}
 	return out

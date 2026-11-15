@@ -15,8 +15,12 @@ import (
 
 func TestDemoModel(t *testing.T) {
 	m := Demo()
-	if m.Station.CommonAddress != 1 || len(m.Points) < 10 || len(m.Commands) != 7 || len(m.Files) != 2 || !m.Uploads.Accept {
+	if m.Station.CommonAddress != 1 || len(m.Points) < 10 || len(m.Commands) != 7 || len(m.Files) != 2 {
 		t.Fatalf("demo model: %+v", m.Station)
+	}
+	// The demo takes no files: a delivery needs a model that accepts it.
+	if m.Uploads.Accept {
+		t.Errorf("the demo model accepts uploads: %+v", m.Uploads)
 	}
 	// Both encodings of the model read back as the same model.
 	for _, asJSON := range []bool{false, true} {

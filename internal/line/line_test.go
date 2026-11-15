@@ -140,7 +140,7 @@ func TestServeOneAtATime(t *testing.T) {
 			}
 			started <- struct{}{}
 			<-ctx.Done()
-		}, func(string) { busy.Add(1) })
+		}, func(string) { busy.Add(1) }, nil)
 	}()
 	first, err := net.Dial("tcp", l.Addr().String())
 	if err != nil {
@@ -175,7 +175,7 @@ func TestServeAfterTheFirstEnds(t *testing.T) {
 	defer cancel()
 	var served atomic.Int32
 	go func() {
-		_ = Serve(ctx, l, func(ctx context.Context, c Conn) { served.Add(1) }, nil)
+		_ = Serve(ctx, l, func(ctx context.Context, c Conn) { served.Add(1) }, nil, nil)
 	}()
 	for i := 0; i < 3; i++ {
 		c, err := net.Dial("tcp", l.Addr().String())
@@ -201,7 +201,7 @@ func TestServeListenerFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = l.Close()
-	if err := Serve(context.Background(), l, func(context.Context, Conn) {}, nil); err == nil {
+	if err := Serve(context.Background(), l, func(context.Context, Conn) {}, nil, nil); err == nil {
 		t.Error("no error from a closed listener")
 	}
 }
@@ -242,7 +242,7 @@ func TestServeWaitsForThePrevious(t *testing.T) {
 			if n.Add(1) == 1 {
 				<-release
 			}
-		}, func(string) { busy.Add(1) })
+		}, func(string) { busy.Add(1) }, nil)
 	}()
 	first, err := net.Dial("tcp", l.Addr().String())
 	if err != nil {

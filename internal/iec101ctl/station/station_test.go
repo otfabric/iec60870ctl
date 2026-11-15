@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
@@ -319,8 +320,13 @@ points:
 	}
 }
 
-// Events are kept for the next line while none is served; class 2 data is not.
+// Events are kept for the next line while none is served; class 2 data is not. The
+// simulation runs on the fake clock of a synctest bubble: four intervals of 50 ms pass.
 func TestStationBacklogAndSimulation(t *testing.T) {
+	synctest.Test(t, testStationBacklogAndSimulation)
+}
+
+func testStationBacklogAndSimulation(t *testing.T) {
 	m, err := Parse([]byte(`
 station: {common_address: 1, cyclic_interval: 100ms}
 points:
@@ -347,17 +353,23 @@ points:
 	}
 	sctx, stop := context.WithCancel(context.Background())
 	st.Simulate(sctx)
+	// The fake clock moves on when every goroutine of the bubble waits; Wait returns once
+	// the tickers that fired at 200 ms have done their step.
 	time.Sleep(200 * time.Millisecond)
+	synctest.Wait()
 	stop()
 	st.Wait()
 	st.mu.Lock()
 	n := len(st.backlog)
 	st.mu.Unlock()
-	if n < 2 {
-		t.Fatalf("backlog of %d events", n)
+	// The change of point 1, and four changes each of the toggled points 3 and 7; the
+	// measured values and the cyclic data are not kept.
+	if n != 9 {
+		t.Fatalf("backlog of %d events, want 9", n)
 	}
-	if v, _ := st.Value(6); v.(int64) > 100 {
-		t.Errorf("the counter did not wrap: %v", v)
+	// 2147483647 wraps to 0 at the first step, then counts 1, 2, 3.
+	if v, _ := st.Value(6); v != int64(3) {
+		t.Errorf("the counter is %v after four steps, want 3", v)
 	}
 }
 

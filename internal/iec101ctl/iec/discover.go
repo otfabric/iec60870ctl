@@ -162,9 +162,10 @@ const (
 )
 
 // probe connects to addr and sends one request status of link (function 9). A station
-// answers it in any state, before its link is reset, and it changes nothing: the probe
-// neither initializes the link nor asks for data. It is the least a primary station can
-// say.
+// answers it in any state, before its link is reset: the probe neither initializes the
+// link nor asks for data. In balanced transmission the station may send its own user data
+// while the probe is connected; the probe answers it with a negative acknowledgement, so
+// the station keeps it. It is the least a primary station can say.
 func probe(ctx context.Context, addr string, l Link, timeout time.Duration) (status string, rtt time.Duration) {
 	begin := time.Now()
 	d := net.Dialer{Timeout: timeout}

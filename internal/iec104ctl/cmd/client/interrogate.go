@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/envflag"
 	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
@@ -91,8 +92,21 @@ Anything but "read" changes the station: energy counters that are reset are gone
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckCounters(&cfg) },
-			func(ctx context.Context) (any, error) { return iec.Counters(ctx, &cfg, cmd.ErrOrStderr()) })
+			func() error {
+				// A freeze or reset is taken only from the command line: one from the
+				// environment becomes "read". A broadcast --ca too, when the request still
+				// changes the counters after that.
+				if cfg.Freeze != "read" {
+					envflag.CommandLineOnly(cmd, "freeze")
+				}
+				if cfg.Freeze != "read" {
+					commandLineOnly(cmd, cfg.CommonAddr)
+				}
+				return iec.CheckCounters(&cfg)
+			},
+			func(ctx context.Context) (any, error) {
+				return iec.Counters(ctx, &cfg, cmd.ErrOrStderr())
+			})
 	}
 	return cmd
 }

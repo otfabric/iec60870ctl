@@ -6,7 +6,7 @@ The IEC 60870-5-103 tool of [iec60870ctl](../../README.md); install it as descri
 
 The line is FT 1.2 (IEC 60870-5-1) over a serial port, or over one TCP connection to a terminal server (serial device server) that passes the byte stream through. Output is text, a table or JSON with the exit codes of [docs/exitcodes.md](../exitcodes.md). It is written in Go on top of [go-iec60870-5](https://github.com/otfabric/go-iec60870-5) (packages `iec103`, `iec103/client`, `iec103/server`, `link`, `ft12`, `cp`).
 
-> **Responsible use:** iec103ctl sends real requests to protection relays. Only use it on equipment and lines you own or are authorized to test. `client command` switches protection functions, `client generic write` changes settings that are in force at once, `client clock` sets the relay's clock, and `client scan` resets the link of every device it finds (which clears their transmit buffers). A relay has one controlling system per line: while iec103ctl holds it, the station controller cannot poll.
+> **Responsible use:** iec103ctl sends real requests to protection relays. Only use it on equipment and lines you own or are authorized to test. `client command` switches protection functions, `client generic write` changes settings that are in force at once, `client clock` sets the relay's clock, `client disturbance get` lets the relay delete the record it transferred (the final positive acknowledgement allows it), and `client scan` resets the link of every device it finds. Every client command starts the link with reset CU, which empties the relay's transmit buffers: class 1 and class 2 data not yet polled, events among them, that the station controller then never receives. `--reset-fcb` starts the link with reset FCB instead, which keeps them. A relay has one controlling system per line: while iec103ctl holds it, the station controller cannot poll.
 
 Read [LIMITATIONS.md](LIMITATIONS.md) before relying on a result.
 
@@ -45,7 +45,7 @@ An information object is addressed by a **function type** (FUN: 128 distance, 16
 | `--link-address` | 1 | the device's link address, 0-254 |
 | `--common-address` | 0 = the link address | common address of ASDU, 1-255 |
 | `--link-timeout`, `--retries` | 1000 ms, 3 | how long a frame waits for its answer, and how often it is repeated |
-| `--reset-fcb` | off | initialize the link with reset FCB (function 7) instead of reset CU |
+| `--reset-fcb` | off | initialize the link with reset FCB (function 7) instead of reset CU (function 0), which empties the device's transmit buffers |
 | `--poll-interval` | 100 ms | pause between class 2 polls when the device has nothing to send |
 | `--timeout` | 10000 ms | connecting, the link start-up, and each request |
 | `--timezone` | utc | zone of the time tags on the wire: `utc`, `local` or an IANA name |
@@ -53,6 +53,8 @@ An information object is addressed by a **function type** (FUN: 128 distance, 16
 | `--debug` | | every frame sent and received, decoded, on stderr |
 
 Every environment variable is the flag in upper case with `IEC103CTL_` in front (`IEC103CTL_URL`, `IEC103CTL_FORMAT`, ...); `--help` of each command names them.
+
+Three flags decide what a request changes at the device and are taken **only from the command line**: `--broadcast` of `client clock` (every device on the line takes the time), `--time` of `client clock` other than `now`, and `--mode` of `client generic write`. When `IEC103CTL_BROADCAST` or `IEC103CTL_TIME` is set and the flag is not given, the variable is not used: `client clock` takes the built-in default (no broadcast, the time of sending) and says so on stderr before anything is sent, `notice: IEC103CTL_BROADCAST=true is not used: --broadcast is taken only from the command line`. When `IEC103CTL_WRITE_MODE` is set and `--mode` is not given, `client generic write` is refused before anything is sent (exit code 3, `invalid_flag_combination`: `IEC103CTL_WRITE_MODE=abort is not used: --mode is taken only from the command line; give --mode abort to run it so`), because its default, write with execution, would activate the value. Give `--mode` on the command line.
 
 The link start-up is never followed by the automatic time synchronization and general interrogation of clause 7.4.1: every command does only what it is asked to. A TCP line that a terminal server closes during the link start-up (it still serves the previous connection) is opened again until `--timeout`.
 
@@ -108,11 +110,11 @@ iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.2 --type float32 --
 iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.3 --type uint --size 2 --value 450 --mode abort
 ```
 
-`generic write` writes one data set: `--type` `ascii` (1), `uint` (3), `int` (4), `float32` (7) or `float64` (8), `--size` the octets of an integer (1-8; for `ascii` the length of the text), `--value`. `--mode execute` (default) is the write with execution (INF 250): cause 40 is success, cause 41 a refusal with a generic reply code per data set (exit code 6). `--mode abort` stages the value with write entry (INF 248) and drops it with write abort (INF 251): nothing is activated. Sent exactly once.
+`generic write` writes one data set: `--type` `ascii` (1), `uint` (3), `int` (4), `float32` (7) or `float64` (8), `--size` the octets of an integer (1-8; for `ascii` the length of the text), `--value`. `--mode execute` (default) is the write with execution (INF 250): cause 40 is success, cause 41 a refusal with a generic reply code per data set (exit code 6). `--mode abort` stages the value with write entry (INF 248) and drops it with write abort (INF 251): nothing is activated. The abort is also sent when the write entry fails, times out or is interrupted (Ctrl-C), with a `--timeout` of its own, because the link layer may still deliver the write entry; an abort the device does not answer within `--timeout` is sent once more. The error then says whether the abort was acknowledged or that the value may still be staged on the device. The write is sent exactly once; only the abort may be sent again.
 
 ### client disturbance list, get
 
-The transmission of disturbance data (clause 7.4.7). `list` requests the list of recorded disturbances (ASDU 24 TOO 24, answered by ASDU 23). `get` transfers one record (`--fan`): the description (ASDU 26), the tags (ASDU 29) and every channel (ASDUs 27 and 30), acknowledging each part. `--fun` is the function type of the orders, by default the one of the device's identification. `--output` writes the record as JSON, `--csv` the values as CSV (one row per value number: `index`, `time_us` from the first value, one column per channel with the raw SDV); an existing file is refused before anything is sent unless `--force`. `--transfer-timeout` bounds the transfer (2 minutes). The alias of `disturbance` is `fault`.
+The transmission of disturbance data (clause 7.4.7). `list` requests the list of recorded disturbances (ASDU 24 TOO 24, answered by ASDU 23). `get` transfers one record (`--fan`): the description (ASDU 26), the tags (ASDU 29) and every channel (ASDUs 27 and 30), acknowledging each part. `--fun` is the function type of the orders, by default the one of the device's identification. `--output` writes the record as JSON, `--csv` the values as CSV (one row per value number: `index`, `time_us` from the first value, one column per channel with the raw SDV). The final positive acknowledgement of `get` allows the device to delete the record, so both files are created before anything is sent: an existing file (unless `--force`, which empties it) or one that cannot be created, a directory that does not exist for example, ends the command with exit code 3 (`output_file_create_failed`) and the record stays on the device. When the command fails after that, the files are removed. `--transfer-timeout` bounds the transfer (2 minutes). The alias of `disturbance` is `fault`.
 
 ```console
 iec103ctl client disturbance list --url tcp://10.0.0.20

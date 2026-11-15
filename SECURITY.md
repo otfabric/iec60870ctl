@@ -37,6 +37,7 @@ Plain IEC 60870-5-104 carries no authentication and no encryption: anyone who ca
 `iec104ctl` supports the transport security of IEC 62351-3: `tls://` URLs with `--tls-ca`, and `--tls-cert` / `--tls-key` for mutual authentication; the server takes `--tls-cert`, `--tls-key` and `--tls-client-ca`. TLS 1.2 is the minimum.
 
 - `--tls-insecure` turns off verification of the station's certificate. It is for test setups; do not use it against a station that matters
+- The scheme of `--url` decides whether TLS is used: `tls://` connects with TLS, `tcp://` without. A TLS flag (`--tls`, `--tls-ca`, `--tls-cert`, `--tls-key`, `--tls-server-name`, `--tls-insecure`) or its `IEC104CTL_TLS*` variable together with a `tcp://` URL is refused with exit `2` (`invalid_flag_combination`) before any connection, so a command given TLS flags never connects over plain TCP. With `--ip`, any TLS flag turns TLS on
 - Private keys are read from the files you name and are never written or printed. Keep them readable by you alone
 - TLS authenticates the connection, not the individual ASDU: see the application-layer security below
 
@@ -60,14 +61,24 @@ reach a terminal server's TCP port, can read and command the station.
   polls get confused, and the station may answer you instead of it. In balanced mode both
   ends send as primaries
 - **`server start`** serves one connection at a time on all interfaces (`--listen` to bind
-  one); on a serial port it answers whatever is on the line
+  one). A connection that arrives while one is served waits up to half a second for it to
+  end; at most four wait, and a further one is closed at once. On a serial port it answers
+  whatever is on the line
 - **iec102ctl access keys** (REE profile) are passwords of the meter. Give them with
-  `--access-key-file` or the environment rather than `--access-key` on a shared machine:
-  a command line is visible to other users. They are never printed: the `--debug` frame
-  trace shows the login frame with the key hidden. On the line itself the key travels in
-  clear
+  `--access-key-file` or `IEC102CTL_ACCESS_KEY`: `--access-key` is deprecated, because a
+  command line is visible to other users of the computer, and it prints a warning on
+  stderr. Keys are never printed: the `--debug` frame trace shows a login frame with the
+  key hidden, also one that cannot be decoded. On the line itself the key travels in clear
 - **`iec103ctl client generic write`** changes settings of protection equipment, and
-  **`client command`** switches its functions (auto-recloser, teleprotection) on and off
+  **`client command`** switches its functions (auto-recloser, teleprotection) on and off.
+  `generic write --mode abort` stages a value and aborts it; when the abort is not
+  acknowledged, the error says that the value may still be staged on the device
+- **Every `iec103ctl client` command starts the link with reset CU**, which empties the
+  relay's transmit buffers: events the station controller has not polled yet are lost to
+  it. `--reset-fcb` starts the link with reset FCB, which keeps them
+- **`iec103ctl client disturbance get`** lets the relay delete the record it transferred
+  (the final positive acknowledgement allows it). `--output` and `--csv` are created
+  before anything is sent, so a file that cannot be written does not cost the record
 - A serial device (`serial:///dev/ttyUSB0`) needs the user to be allowed to open it (on
   Linux the `dialout` group); no tool needs root
 
@@ -78,18 +89,28 @@ reach a terminal server's TCP port, can read and command the station.
 - **`client reset`** restarts the station's process or clears its event buffer; `--qualifier` has no default
 - **`client counters`** with `--freeze freeze`, `freeze-reset` or `reset` freezes or clears counters. Energy counters that are reset are gone
 - **`client file put`** delivers a file the station may act on (a configuration, firmware)
+- **iec101ctl `client delay --set`** sets the transmission delay the station adds to the time of a later clock synchronization
+- **The parameters that decide what these commands change are taken only from the command line.** When one of them is set only by its environment variable, the variable is not used: the command runs with the flag's built-in default and names the variable on stderr before anything is sent (`notice: IEC101CTL_FREEZE=reset is not used: --freeze is taken only from the command line`), and a procedure taken from a variable (`--mode` of iec101ctl and iec104ctl `client command`, of iec103ctl `client generic write`) refuses the command (exit `3`) and sends nothing, rather than run the default. A stale or shared environment does not reset counters, set a clock, choose how a command operates or whether a setting is activated, or address every station of a line. The parameters are:
+  - iec101ctl: `--freeze` other than `read`, `--set` of `client delay`, `--mode` and `--qualifier` of `client command`, `--time` other than `now`, and a broadcast `--ca` of `client clock`, `client reset` and `client counters` with such a `--freeze`
+  - iec102ctl: `--time` of `client ree set-time`; `--cause`, `--record`, `--data` and `--objects` of `client request`
+  - iec103ctl: `--broadcast` and `--time` other than `now` of `client clock`; `--mode` of `client generic write`
+  - iec104ctl: `--freeze` other than `read` of `client counters`, `--mode` and `--qualifier` of `client command`, `--time` other than `now` of `client clock`, and a broadcast `--ca` (65535) of `client clock`, `client reset` and `client counters` with such a `--freeze`
 
 ### Commands That Are Read-Only but Not Invisible
 
 - **Every client command connects and starts data transfer.** A station sends its events on one connection: yours may take them from the control centre for as long as you are connected, and a station that accepts few connections may turn the control centre away meanwhile
 - **`client interrogate`** and **`client scan`** make a station send its whole process image
 - **`discover`** connects to every address of a subnet. It sends a single test frame and does not start data transfer, but the connection may be logged, or counted against a station's connection limit. Scan production networks only with the agreement of whoever runs them
+- **iec101ctl `discover` and `client ping --method link-status|link-test`** take no data from a station: in balanced transmission the station's own user data (its events) is answered with a negative acknowledgement, and the station keeps it for the controlling station that brings the link up next
 
 ### Running a Server
 
-- `server start` listens on **all network interfaces** and accepts **any client** by default. Use `--listen` to bind to one address and `--allow` to restrict the clients, or a host firewall
-- The simulated station executes every command it is sent on its simulated points and takes delivered files when the model accepts uploads. With `uploads.dir` those files are written to disk under names the server chooses (`ioa-<n>-name-<n>.bin`); the client does not control the path
-- A model may reference files on disk (`files[].path`): the server serves whatever those paths name to any client it accepts
+- `server start` listens on **all network interfaces** and accepts **any client** by default. Use `--listen` to bind to one address, and a host firewall; iec104ctl also has `--allow` to restrict the clients. The serial tools (iec101ctl, iec102ctl, iec103ctl) have no `--allow`: over TCP they serve one connection at a time, as described above
+- iec104ctl `server start` serves at most 16 connections at once by default and closes a further one at once; `--max-sessions` sets another limit (0 = no limit). Each connection may have up to 16 file transfers open at once, and while a file is being delivered what has arrived of it is held in memory. The upload limits of the model (`uploads.max_files`, `uploads.max_total_size`) count the files being delivered, with the length announced for them, across all connections
+- The simulated station executes every command it is sent on its simulated points and takes delivered files only when the model accepts uploads (`uploads.accept`); the built-in demo station of iec104ctl takes none. With `uploads.dir` those files are written to disk under names the server chooses (`ioa-<n>-name-<n>.bin`); the client does not control the path
+- A model may reference files on disk (`files[].path`): the server serves whatever those paths name to any client it accepts. In iec104ctl a model file holds at most 16 MiB, and a file it names by `path` must be a regular file of at most 16 777 215 octets, checked from the size the file system reports before it is read
+- A station model is bounded before it is served: iec102ctl takes at most 1 000 000 integrated totals in all, 256 per generated period with each address once, 48 contracted powers and 49 special days; iec103ctl takes a `simulate` period of 0 (none) or 100 to 86 400 000 ms
+- iec103ctl `server start` keeps a generic write staged with write entry for the line that staged it, at most 64 data sets per write and four writes, and drops it when the line ends or resets its link
 
 ### Output
 

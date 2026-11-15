@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec101ctl/types"
 )
 
@@ -19,7 +20,8 @@ func FormatTime(t time.Time) string { return t.UTC().Format(TimeLayout) }
 
 // Points flattens an ASDU into one [types.Point] per information object. Types that carry
 // no process information (confirmations of commands, file transfer) yield points with a nil
-// value, so that nothing a station sends is hidden.
+// value, so that nothing a station sends is hidden. A NaN or infinite float is a nil value
+// with its name in NonFinite.
 func Points(a *asdu.ASDU) []types.Point {
 	if a == nil {
 		return nil
@@ -38,6 +40,8 @@ func Points(a *asdu.ASDU) []types.Point {
 			Originator: a.Originator,
 		}
 		fill(&p, o, a.Type.HasTimeTag())
+		// A NaN or infinite float has no JSON number: it is shown by its name.
+		p.Value, p.NonFinite = format.Finite(p.Value)
 		out = append(out, p)
 	}
 	if len(a.Objects) == 0 {

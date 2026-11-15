@@ -38,11 +38,12 @@ func (r Ranges) Contains(n uint32) bool {
 	return false
 }
 
-// Count returns how many numbers the set names.
-func (r Ranges) Count() int {
-	n := 0
+// Count returns how many numbers the set names. It counts in int64, so that the count is
+// the same on every platform, an int of 32 bits included.
+func (r Ranges) Count() int64 {
+	var n int64
 	for _, x := range r {
-		n += int(x.Hi-x.Lo) + 1
+		n += int64(x.Hi-x.Lo) + 1
 	}
 	return n
 }

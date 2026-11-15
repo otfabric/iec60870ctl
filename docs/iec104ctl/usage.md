@@ -269,6 +269,8 @@ Every `iec104ctl client` command takes the station as a URL, or as an address an
 iec104ctl client interrogate --url tls://rtu.example.net --tls-ca ca.pem --tls-cert scada.pem --tls-key scada.key
 ```
 
+With `--url` the scheme decides: a `tcp://` URL connects over plain TCP, a `tls://` URL with TLS. A TLS flag with a `tcp://` URL is refused: given on the command line or by its `IEC104CTL_TLS*` variable, it ends the command with exit code 2 (`invalid_flag_combination`) before any connection, and the message names the flags and the `tls://` form of the URL (`--tls-ca cannot be used with the URL tcp://rtu:2404: a tcp:// URL connects without TLS; give a tls:// URL (tls://rtu:2404) to connect with TLS`). For TLS use a `tls://` URL, or `--ip` with the TLS flags; for plain TCP leave the TLS flags and their variables unset.
+
 **Application-layer security (IEC 62351-5)**
 
 `--secure` runs the A-Profile of IEC 62351-5, as IEC TS 60870-5-7 maps it onto IEC 104. After STARTDT the client and the station first agree on keys in a Station Association authenticated with their certificates, then on session keys; from then on every ASDU travels as Secure Data (`S_SD_NA_1`), authenticated with a truncated HMAC, or encrypted and authenticated with AES-256-GCM, and numbered against replay. The command starts only once the session is secure. It works over TCP and over TLS.
@@ -469,7 +471,7 @@ iec104ctl client command --ip 192.168.1.10 --type single --ioa 5000 --value on -
 | `select` | Select only, to see whether the station accepts the selection |
 | `cancel` | Select, then deactivate the selection |
 
-A selection belongs to the connection that made it and ends with it, so `select` and `cancel` operate nothing: they show how the station handles the two steps.
+`select` and `cancel` execute nothing: they show how the station handles the two steps. `cancel` deactivates its selection at once; after `select` the selection stays until the station ends it. The simulated station of `server start` ends a selection with the connection that made it. That is the simulator's rule, not one every station follows: a real station may keep a selection until its own select time-out, and meanwhile refuse a command for that object from the control centre.
 
 `--qualifier` is the qualifier of command for switching commands (`none`, `short`, `long`, `persistent`) or the QL number 0-127 for set points.
 
@@ -643,8 +645,8 @@ What it does:
 - **Executes commands** on the points named as their `target`, direct or select-before-operate, and reports the change as an event with cause "return information caused by a remote command". `select_required` refuses an execute without a select.
 - **Changes values by itself** where the model says `simulate` (`toggle`, `ramp`, `sine`, `random`, `count`), and reports the changes as spontaneous events with a time tag. `cyclic_interval` sends the measured values periodically.
 - **Queues events** of state changes and commands while no controlling station is connected and delivers them to the next one, as an RTU does.
-- **Serves any number of connections**, of which one receives the events (redundancy).
-- **Serves files** and, with `uploads.accept`, takes them.
+- **Serves up to 16 connections** (`--max-sessions`; 0 = no limit), of which one receives the events (redundancy). A further connection is closed at once.
+- **Serves files** and, with `uploads.accept`, takes them. The built-in demo station takes none.
 
 Every event is written to stdout as it happens:
 
@@ -670,7 +672,7 @@ With `--secure` the station also logs `secured` when a controlling station has a
 | `--association-id` | The AIS, the station's half of the association ID (default 1). Every controlling station (AIM) gets its own association |
 | `--roles` | The roles every controlling station has: `viewer`, `operator`, `engineer`, `installer`, `secadm`, `secaud`, `rbacmnt`. A request no role permits is refused with cause 17. Without it there is no access control |
 | `--allow` | Only accept clients from these addresses or CIDR prefixes |
-| `--max-sessions` | Maximum number of simultaneous connections |
+| `--max-sessions` | Maximum number of simultaneous connections; a further one is closed at once. 16 by default, 0 = no limit |
 | `--duration` | Stop after this many seconds, for use in test pipelines |
 | `--k`, `--w`, `--t0` … `--t3`, `--cot-size`, `--ca-size`, `--ioa-size`, `--timezone` | As for the client |
 
@@ -681,6 +683,12 @@ The full reference of the model is in [docs/server-config.md](server-config.md).
 ## Environment Variable Configuration
 
 Every flag can also be set through an environment variable, which is convenient for automation and for flags you would otherwise repeat on every command (`IEC104CTL_URL`, `IEC104CTL_CA`, `IEC104CTL_FORMAT`). A flag on the command line wins over the environment. A value that cannot be parsed (a port that is not a number) stops iec104ctl at startup. A flag that is **required** (`--ioa` of `client read`, `--type` and `--value` of `client command`, `--qualifier` of `client reset`) must still be given on the command line. The global flag `--debug` has no environment variable.
+
+A parameter that decides what a request changes at a station is taken only from the command line: `--freeze` of `client counters` other than `read`, `--qualifier` of `client command`, `--time` of `client clock` other than `now`, and `--ca 65535` (the broadcast address, every station behind the connection) of `client clock`, `client reset` and of `client counters` with such a `--freeze`. When its variable is set and the flag is not given, the value of the variable is not used: the flag keeps its built-in default (`read`, `none`, `now`, common address 1), and one line on stderr, before anything is sent, names the variable and the flag (`notice: IEC104CTL_FREEZE=reset is not used: --freeze is taken only from the command line`).
+
+`--mode` of `client command` is taken only from the command line as well, but its built-in default `execute` would do more than a `select` or a `cancel`: with `IEC104CTL_COMMAND_MODE` set and no `--mode`, the command is refused with exit code 3 (`invalid_flag_combination`) before it connects, and nothing is sent (`IEC104CTL_COMMAND_MODE=select is not used: --mode is taken only from the command line; give --mode select to run it so`).
+
+`IEC104CTL_IOA` is the list of information object addresses of `client interrogate`, `read` and `monitor`, with ranges (`100,200-299`). The single address of `client command` is `IEC104CTL_COMMAND_IOA`, the one of `client file list`, `get` and `put` is `IEC104CTL_FILE_IOA`, so a list in `IEC104CTL_IOA` does not stop the other commands at startup.
 
 ```console
 export IEC104CTL_URL=tcp://192.168.1.10:2404
@@ -699,7 +707,8 @@ iec104ctl client read --ioa 1000
 | **IEC104CTL_ASSOCIATION_ID** | uint16 | Association ID of IEC 62351-5, 1-65535: the AIM of a client, the AIS of **`server start`** (needs `--secure`) | `--association-id` | 1 |
 | **IEC104CTL_CA** | uint16 | Common address of the station (**`client monitor`**: only show this station) | `--ca` | 1 (monitor: all) |
 | **IEC104CTL_CA_SIZE** | uint8 | Octets of the common address, 1 or 2 (0 = 2) | `--ca-size` | 0 |
-| **IEC104CTL_COMMAND_MODE** | string | **`client command`**: execute, select, sbo or cancel | `--mode` | execute |
+| **IEC104CTL_COMMAND_IOA** | uint32 | **`client command`**: information object address of the command (`--ioa` is required on the command line) | `--ioa` | |
+| **IEC104CTL_COMMAND_MODE** | string | **`client command`**: execute, select, sbo or cancel; taken only from the command line, the variable alone is refused | `--mode` | execute |
 | **IEC104CTL_COMMAND_TYPE** | string | **`client command`**: single, double, step, setpoint-normalized, setpoint-scaled, setpoint-float, bitstring, or a type name | `--type` | |
 | **IEC104CTL_CONFIG** | string | **`server start`**: station model file (YAML or JSON) | `--config` | built-in demo |
 | **IEC104CTL_CONFIG_FORMAT** | string | **`server generate-config`**: yaml or json | `--format` | yaml |
@@ -711,6 +720,7 @@ iec104ctl client read --ioa 1000
 | **IEC104CTL_DPA** | string | Data protection algorithm of IEC 62351-5, by code or name (needs `--secure`) | `--dpa` | `--mal` |
 | **IEC104CTL_DURATION** | uint32 | **`client monitor`**, **`server start`**: stop after this many seconds (0 = until interrupted) | `--duration` | 0 |
 | **IEC104CTL_END** | uint16 | **`client scan`**: last common address of a sweep | `--end` | 255 |
+| **IEC104CTL_FILE_IOA** | uint32 | **`client file list`**: the directory (0 = the station's default); **`get`**, **`put`**: the file (`--ioa` is required on the command line) | `--ioa` | 0 |
 | **IEC104CTL_FILE_NAME** | uint16 | **`client file get`**, **`put`**: name of file (NOF) | `--name` | 1 |
 | **IEC104CTL_FORCE** | bool | **`server generate-config`**: overwrite an existing file | `--force` | false |
 | **IEC104CTL_FREEZE** | string | **`client counters`**: read, freeze, freeze-reset or reset | `--freeze` | read |
@@ -718,13 +728,13 @@ iec104ctl client read --ioa 1000
 | **IEC104CTL_INPUT** | string | **`client file put`**: file whose content is sent | `--input` | |
 | **IEC104CTL_INTERROGATE** | bool | **`client monitor`**: general interrogation after connecting and after every reconnect | `--interrogate` | false |
 | **IEC104CTL_INTERVAL** | uint32 | **`client ping`**: interval between tests in ms | `--interval` | 1000 |
-| **IEC104CTL_IOA** | uint32 / list | Information object address: of the command or file; a list with ranges for **`client read`**, **`interrogate`** and **`monitor`** | `--ioa` | |
+| **IEC104CTL_IOA** | list | **`client read`**, **`interrogate`**, **`monitor`**: information object addresses, a list with ranges | `--ioa` | |
 | **IEC104CTL_IOA_SIZE** | uint8 | Octets of the information object address, 1 to 3 (0 = 3) | `--ioa-size` | 0 |
 | **IEC104CTL_IP** | string | Station IP address or host name | `--ip` | |
 | **IEC104CTL_K** | uint16 | k: maximum number of unacknowledged I frames sent (0 = 12) | `--k` | 0 |
 | **IEC104CTL_LISTEN** | string | **`server start`**: address to listen on | `--listen` | all interfaces |
 | **IEC104CTL_MAL** | string | MAC algorithm of IEC 62351-5, by code or name (needs `--secure`) | `--mal` | hmac-sha-256 |
-| **IEC104CTL_MAX_SESSIONS** | uint16 | **`server start`**: maximum number of connections (0 = no limit) | `--max-sessions` | 0 |
+| **IEC104CTL_MAX_SESSIONS** | uint16 | **`server start`**: maximum number of connections (0 = no limit) | `--max-sessions` | 16 |
 | **IEC104CTL_NO_RECONNECT** | bool | **`client monitor`**: exit when the connection is lost | `--no-reconnect` | false |
 | **IEC104CTL_ORIGINATOR** | uint8 | Originator address sent with every request | `--originator` | 0 |
 | **IEC104CTL_OUTPUT** | string | **`client file get`**: file to write (`-` = stdout); **`server generate-config`**: file to write | `--output` | (generate-config: `-`) |

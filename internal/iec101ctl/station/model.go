@@ -303,6 +303,14 @@ func (m *Model) Validate() error {
 }
 
 func (s *SimSpec) validate(typ asdu.TypeID) error {
+	for _, f := range []struct {
+		name string
+		v    float64
+	}{{"min", s.Min}, {"max", s.Max}, {"step", s.Step}} {
+		if math.IsNaN(f.v) || math.IsInf(f.v, 0) {
+			return fmt.Errorf("%s %v: use a finite number", f.name, f.v)
+		}
+	}
 	if time.Duration(s.Interval) < 50*time.Millisecond {
 		return fmt.Errorf("interval %s: use at least 50ms", time.Duration(s.Interval))
 	}

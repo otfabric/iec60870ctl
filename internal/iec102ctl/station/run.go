@@ -121,10 +121,12 @@ func Run(ctx context.Context, cfg *config.ServerConfig, log func(types.ServerEve
 	}
 	err = line.Serve(ctx, ln, func(ctx context.Context, c line.Conn) {
 		st.event(types.ServerEvent{Event: "connected", Remote: c.Remote})
-		st.Serve(ctx, c, c.Remote)
+		_ = st.Serve(ctx, c, c.Remote) // the end of a TCP connection ends only that connection
 		st.event(types.ServerEvent{Event: "disconnected", Remote: c.Remote})
 	}, func(remote string) {
 		st.event(types.ServerEvent{Event: "busy", Remote: remote, Detail: "the line is in use: connection closed"})
+	}, func(err error) {
+		st.event(types.ServerEvent{Event: "busy", Detail: fmt.Sprintf("accept failed: %v; accepting again", err)})
 	})
 	st.event(types.ServerEvent{Event: "stopping"})
 	if err != nil {
@@ -133,7 +135,8 @@ func Run(ctx context.Context, cfg *config.ServerConfig, log func(types.ServerEve
 	return nil
 }
 
-// runSerial serves the serial port of cfg until ctx ends or the port fails.
+// runSerial serves the serial port of cfg until ctx ends or the port fails: a port that
+// fails while ctx has not ended is a transport error (exit code 4).
 func runSerial(ctx context.Context, cfg *config.ServerConfig, st *Station, detail string, ready func(string)) error {
 	sc, err := line.SerialConfig(cfg.Serial, settings(cfg))
 	if err != nil {
@@ -147,7 +150,10 @@ func runSerial(ctx context.Context, cfg *config.ServerConfig, st *Station, detai
 	if ready != nil {
 		ready(cfg.Serial)
 	}
-	st.Serve(ctx, port, cfg.Serial)
+	err = st.Serve(ctx, port, cfg.Serial)
 	st.event(types.ServerEvent{Event: "stopping"})
+	if err != nil {
+		return errs.New(errs.KindTransport, errs.CodeConnectionLost, fmt.Sprintf("serving %s ended: %v", cfg.Serial, err), err)
+	}
 	return nil
 }
