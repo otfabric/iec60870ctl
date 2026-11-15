@@ -2,7 +2,7 @@
 
 `iec104ctl server start` serves the controlled station a model file describes. The file is YAML, or JSON (which is YAML). `iec104ctl server generate-config` writes a commented example; this page is the reference.
 
-A field the model does not know is an error, and everything that is wrong with a model is reported at once, before the server listens.
+A field the model does not know is an error, and everything that is wrong with a model is reported at once, before the server listens. A model file holds at most 16 MiB (16 777 216 octets): a larger regular file is refused from its size, and from anything else (a named pipe) at most one octet more is read.
 
 ```yaml
 station:
@@ -79,6 +79,8 @@ Durations are strings such as `500ms`, `5s` or `2m`.
 | `min`, `max` | Bounds of `ramp`, `sine` and `random` |
 | `step` | Increment of `ramp` and `count` (default 1); period of `sine`, in intervals (default 60) |
 
+`min`, `max` and `step` are finite numbers: `.nan`, `.inf` and `-.inf` are refused.
+
 | Mode | For | Behaviour |
 |------|-----|-----------|
 | `toggle` | single and double points | flips between off and on |
@@ -105,7 +107,7 @@ A change is reported with cause "spontaneous". Changes of **state** (single and 
 | `C_SC_NA_1` single command | `M_SP_NA_1` | takes the commanded state |
 | `C_DC_NA_1` double command | `M_DP_NA_1` | takes the commanded state (off or on; anything else is refused) |
 | `C_RC_NA_1` regulating step command | `M_ST_NA_1` | one step higher or lower, within -64 … 63 |
-| `C_SE_NA_1` / `C_SE_NB_1` / `C_SE_NC_1` set points | `M_ME_NA_1`, `M_ME_NB_1`, `M_ME_NC_1` | takes the value, rounded and limited to what the target type holds |
+| `C_SE_NA_1` / `C_SE_NB_1` / `C_SE_NC_1` set points | `M_ME_NA_1`, `M_ME_NB_1`, `M_ME_NC_1` | takes the value, rounded and limited to what the target type holds. A floating-point set point that is NaN or infinite is outside the range of every type: it is refused with a negative confirmation, as a select and as an execute, and the target keeps its value |
 | `C_BO_NA_1` bitstring command | `M_BO_NA_1` | takes the value |
 
 How the station handles a command:
@@ -115,19 +117,19 @@ How the station handles a command:
 - **Deactivation** of a selection: confirmed; without a selection it is refused.
 - A change of the target is reported as an event with cause "return information caused by a remote command" (11), and queued like a change of state.
 - A selection ends with its connection.
-- An unknown address is answered with "unknown information object address"; a command of another type than the object takes, or a value that is not permitted, with a negative confirmation.
+- An unknown address is answered with "unknown information object address"; a command of another type than the object takes, or a value that is not permitted (a NaN or infinite set point among them), with a negative confirmation. The `command` event of a NaN or infinite set point names it in `non_finite` ([json-output.md](json-output.md)).
 
 ## `files`
 
 | Field | Meaning |
 |-------|---------|
 | `ioa`, `name` | Address and name of file (NOF, a number) the file is fetched by. Required |
-| `path` | A file on disk, relative to the model file |
+| `path` | A regular file on disk, relative to the model file |
 | `content` | The content, as text |
 | `size` | That many octets of a repeating pattern |
 | `section_size` | Octets per section. Default 2048. A file has at most 254 sections and 16 777 215 octets |
 
-Give exactly one of `path`, `content` and `size`. The files are listed in the directory (`client file list`) with the time the server started.
+Give exactly one of `path`, `content` and `size`. The size of a file is checked before anything is read or made: from `size` and `content`, and for `path` from what the file system reports, which must be a regular file (not a directory, a device or a named pipe) of at most 16 777 215 octets. The server reads a `path` when it starts and serves what it read; a change of the file afterwards is not served. The files are listed in the directory (`client file list`) with the time the server started.
 
 ## `uploads`
 
@@ -135,11 +137,13 @@ Give exactly one of `path`, `content` and `size`. The files are listed in the di
 |-------|---------|
 | `accept` | Take the files controlling stations deliver (`client file put`), at any address that is not a point or a command. Without it a delivery is refused |
 | `dir` | Write delivered files to this directory (relative to the model file, created if missing, mode 0750) as `ioa-<ioa>-name-<name>.bin` (mode 0600). Without it they are kept in memory |
-| `max_files` | The number of delivered files kept. Default 64 |
+| `max_files` | The number of delivered files kept, the files being delivered included. Default 64 |
 | `max_file_size` | The largest file taken, in octets. Default 1048576 (1 MiB), at most 16777215 |
-| `max_total_size` | The octets of all delivered files together. Default 16777216 (16 MiB) |
+| `max_total_size` | The octets of all delivered files together, the files being delivered included. Default 16777216 (16 MiB) |
 
-A delivered file appears in the directory and can be fetched back. A file delivered to an address that already holds a delivered file replaces it; with `dir`, the file it replaces is removed from the directory. A delivery beyond a limit is refused when it is announced (the event says which limit), so the limits bound both memory and disk. Files of the model's `files` do not count.
+A delivered file appears in the directory and can be fetched back. A file delivered to an address that already holds a delivered file replaces it; with `dir`, the file it replaces is removed from the directory. A delivery beyond a limit is refused when it is announced (the event says which limit). The files being delivered count as well, from the moment they are accepted, with the length their controlling station announced, across all connections: a delivery gives its place back when it is stored (it then counts as a delivered file), when it ends without being stored, and when its connection ends. The limits bound the delivered files, in memory or on disk, and the files being delivered together. Files of the model's `files` do not count.
+
+While a file is being delivered, what has arrived of it is held in memory. A connection has at most 16 transfers open at once (go-iec60870-5), and `server start` serves at most 16 connections at once unless `--max-sessions` says otherwise (0 = no limit).
 
 ## What the station answers
 

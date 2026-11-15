@@ -78,7 +78,7 @@ address") ends with exit code 6.`,
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckCommand(&cfg) },
+			func() error { return checkedCommand(cmd, &cfg) },
 			func(ctx context.Context) (any, error) { return iec.Command(ctx, &cfg, cmd.ErrOrStderr()) })
 	}
 	return cmd
@@ -115,7 +115,7 @@ frame, with the same frame count bit, which the station recognizes as a repetiti
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckClock(&cfg) },
+			func() error { return checkedClock(cmd, &cfg) },
 			func(ctx context.Context) (any, error) { return iec.Clock(ctx, &cfg, cmd.ErrOrStderr()) })
 	}
 	return cmd
@@ -146,7 +146,7 @@ THIS CHANGES THE STATION: a process reset restarts it.
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckReset(&cfg) },
+			func() error { return checkedReset(cmd, &cfg) },
 			func(ctx context.Context) (any, error) { return iec.Reset(ctx, &cfg, cmd.ErrOrStderr()) })
 	}
 	return cmd

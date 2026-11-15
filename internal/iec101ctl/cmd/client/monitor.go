@@ -90,6 +90,8 @@ func newPingCmd() *cobra.Command {
                         waits for its acknowledgement.
 
 The link methods ask once per test: the link layer does not repeat an unanswered frame.
+They take no data from the station: in balanced transmission the station's own user data
+(its events) is answered with a negative acknowledgement, and the station keeps it.
 Testing runs until --count tests were made, or until interrupted (Ctrl-C) when --count is
 0. A test that fails is reported and testing goes on while the line is open. Exit code 7
 (partial success) means at least one test failed.`,

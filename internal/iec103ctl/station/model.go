@@ -27,6 +27,13 @@ import (
 // MaxModelSize bounds a model file.
 const MaxModelSize = 4 << 20
 
+// The period of a simulated indication, in milliseconds: at least MinSimulate, at most
+// MaxSimulate (one day).
+const (
+	MinSimulate = 100
+	MaxSimulate = 86_400_000
+)
+
 // Model is a simulated protection device.
 type Model struct {
 	SchemaVersion string        `json:"schemaVersion,omitempty" yaml:"schemaVersion,omitempty"`
@@ -69,8 +76,8 @@ type Indication struct {
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 	// GI false keeps it out of the general interrogation.
 	GI *bool `json:"gi,omitempty" yaml:"gi,omitempty"`
-	// Simulate, when set, toggles the indication every so many milliseconds and reports
-	// the change spontaneously (cause 1).
+	// Simulate, when set, toggles the indication every so many milliseconds
+	// (MinSimulate-MaxSimulate) and reports the change spontaneously (cause 1).
 	Simulate int `json:"simulate,omitempty" yaml:"simulate,omitempty"`
 }
 
@@ -259,8 +266,8 @@ func (m *Model) Validate() error {
 		if !inRange(ind.DPI, 0, 3) {
 			bad("indications[%d]: dpi %d: use 0-3 (1 off, 2 on)", i, ind.DPI)
 		}
-		if ind.Simulate < 0 || (ind.Simulate > 0 && ind.Simulate < 100) {
-			bad("indications[%d]: simulate %d: at least 100 ms", i, ind.Simulate)
+		if ind.Simulate < 0 || (ind.Simulate > 0 && ind.Simulate < MinSimulate) || ind.Simulate > MaxSimulate {
+			bad("indications[%d]: simulate %d: use %d-%d ms (0 = no simulation)", i, ind.Simulate, MinSimulate, MaxSimulate)
 		}
 		k := funInf{ind.Fun, ind.Inf}
 		if seen[k] {

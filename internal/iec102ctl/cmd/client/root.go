@@ -5,9 +5,11 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/envflag"
 	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec102ctl/config"
@@ -36,9 +38,11 @@ the FT 1.2 byte stream through; port 2401 by default) or serial:///dev/ttyUSB0 w
 --link-address-size) and the measuring point address (--common-address, --ca-size) must
 match the meter: the defaults are 1, with two octets each.
 
-With --access-key (or --access-key-file, or IEC102CTL_ACCESS_KEY) a command runs inside a
+With an access key (--access-key-file, or IEC102CTL_ACCESS_KEY) a command runs inside a
 session of the Spanish REE profile: C_AC_NA_2 with the key before, C_FS_NA_2 after.
---profile ree decodes the REE types without a session.`,
+--access-key on the command line, which other users of the computer can read, is
+deprecated and warned about on stderr. --profile ree decodes the REE types without a
+session.`,
 	}
 	cmd.AddCommand(
 		newInfoCmd(),
@@ -90,6 +94,14 @@ func sessionExit(m func(any) types.Meter) runner.FormatRunOption {
 	})
 }
 
+// keyFlagWarning writes a warning to stderr when the access key is on the command line
+// (--access-key), where other users of the computer can read it; the key is still used.
+func keyFlagWarning(cmd *cobra.Command) {
+	if f := cmd.Flags().Lookup("access-key"); f != nil && f.Changed {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: --access-key is deprecated: other users of this computer can read a command line; give the key with --access-key-file or IEC102CTL_ACCESS_KEY")
+	}
+}
+
 // meterOf returns the meter of any result.
 func meterOf(v any) types.Meter {
 	switch r := v.(type) {
@@ -117,9 +129,11 @@ func meterOf(v any) types.Meter {
 	return types.Meter{}
 }
 
-// run is the run of a client command: validate, collect, write the result.
+// run is the run of a client command: validate, collect, write the result. A key given with
+// --access-key is warned about on stderr first.
 func run[R any](cmd *cobra.Command, conn *config.ConnConfig, outputFormat string, check func() error, collect func(context.Context, io.Writer) (R, error)) error {
 	conn.Debug = cli.Debug(cmd)
+	keyFlagWarning(cmd)
 	return runner.RunFormattedChecked(cmd, outputFormat, check,
 		func(ctx context.Context) (any, error) { return collect(ctx, cmd.ErrOrStderr()) },
 		sessionExit(meterOf))
@@ -200,7 +214,7 @@ unknown_record_address (16), unknown_type (14).`,
 
   # Increments, active energy only, in an REE session
   iec102ctl client totals --url tcp://10.0.0.20 --kind incremental --first 1 --last 1 \
-      --from 2026-01-31 --to 2026-02-01 --access-key 7 --format table
+      --from 2026-01-31 --to 2026-02-01 --access-key-file meter.key --format table
 
   # The oldest accounting period
   iec102ctl client totals --url tcp://10.0.0.20 --record 1 --kind accounting --oldest
@@ -255,10 +269,12 @@ Answers are decoded with --profile; their information objects are shown as hex.
 THIS MAY CHANGE THE METER: the type decides what the request does (C_MR_NA_2 changes the
 configuration of an REE meter). It is validated before anything is sent and sent once:
 iec102ctl never repeats it (the link layer repeats an unanswered frame with the same frame
-count bit, which the meter takes as a repetition).`,
+count bit, which the meter takes as a repetition). --type must be on the command line, and
+--cause, --record, --data and --objects are taken only from it: their environment variables
+are not used, and a notice on stderr names each one that is set.`,
 		Example: `
   # The configuration of an REE meter (C_RM_NA_2), answered by M_RM_NA_2
-  iec102ctl client request --url tcp://10.0.0.20 --type C_RM_NA_2 --access-key 7
+  iec102ctl client request --url tcp://10.0.0.20 --type C_RM_NA_2 --access-key-file meter.key
 
   # The clock read written out: C_TI_NA_2 with cause request, complete at the first reply
   iec102ctl client request --url tcp://10.0.0.20 --type 103 --cause request --format json
@@ -268,6 +284,7 @@ count bit, which the meter takes as a repetition).`,
 	wire(cmd, &cfg, described("until", meter.UntilValues()), enum("cause", "activation", "request", "deactivation"))
 	cli.MustMarkFlagRequired(cmd, "type")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		envflag.CommandLineOnly(cmd, "cause", "record", "data", "objects")
 		return run(cmd, &cfg.ConnConfig, cfg.OutputFormat, func() error { return meter.CheckRequest(&cfg) },
 			func(ctx context.Context, w io.Writer) (*types.RequestResult, error) {
 				return meter.Request(ctx, &cfg, w)

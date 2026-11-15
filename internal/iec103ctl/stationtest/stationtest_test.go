@@ -3,6 +3,7 @@
 package stationtest
 
 import (
+	"math"
 	"net"
 	"strings"
 	"testing"
@@ -23,6 +24,16 @@ func TestStartServesTheModel(t *testing.T) {
 	_ = c.Close()
 	if s.HasEvent("nothing") || len(s.Events()) != 0 {
 		t.Fatalf("events %v", s.Events())
+	}
+}
+
+// StartChanged serves the model as changed after the device was built from it: a value no
+// valid model holds.
+func TestStartChangedServesTheChange(t *testing.T) {
+	s := StartChanged(t, Model, func(m *station.Model) { m.Disturbances[0].Channels[0].RPV = math.Inf(1) })
+	rec, ok := s.Record(7) // the first disturbance of Model
+	if !ok || !math.IsInf(float64(rec.Channels[0].RPV), 1) {
+		t.Fatalf("record %v %+v", ok, rec)
 	}
 }
 

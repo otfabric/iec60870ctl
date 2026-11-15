@@ -117,7 +117,7 @@ iec101ctl client monitor --url tcp://10.0.0.5:2401 --interrogate --format json >
 
 ### `client ping`
 
-Test a station at `--interval`, `--count` times: `--method command` (test command C_TS_NA_1, default), `link-status` (request status of link, answered by the link layer, also before the link is reset) or `link-test` (the test function for link, balanced only). Exit code 7 when a test failed.
+Test a station at `--interval`, `--count` times: `--method command` (test command C_TS_NA_1, default), `link-status` (request status of link, answered by the link layer, also before the link is reset) or `link-test` (the test function for link, balanced only). The link methods take no data from the station: in balanced transmission the station's own user data (its events) is answered with a negative acknowledgement, and the station keeps it. Exit code 7 when a test failed.
 
 ```console
 iec101ctl client ping --url serial:///dev/ttyUSB0 --method link-status --link-address 3
@@ -153,7 +153,7 @@ Writes the demo model, commented YAML (`--format yaml`) or JSON, to `--output` (
 
 ## `discover`
 
-Probes `--subnets` on `--ports` (2401) for an FT 1.2 station behind a terminal server: one TCP connection and one request status of link to `--link-address` with `--link-address-size` and `--link-mode`. A port that accepts the connection but does not answer is listed as `open`. `--parallel` (32) probes run at a time, each bounded by `--timeout` (1000 ms); more than 4096 hosts need `--force-large-scan`.
+Probes `--subnets` on `--ports` (2401) for an FT 1.2 station behind a terminal server: one TCP connection and one request status of link to `--link-address` with `--link-address-size` and `--link-mode`. With `--link-mode balanced` a station may send its own data while the probe is connected; the probe answers it with a negative acknowledgement, and the station keeps it. A port that accepts the connection but does not answer is listed as `open`. `--parallel` (32) probes run at a time, each bounded by `--timeout` (1000 ms); more than 4096 hosts need `--force-large-scan`.
 
 ```console
 iec101ctl discover --subnets 192.168.1.0/24 --ports 2401,4001
@@ -165,4 +165,30 @@ iec101ctl discover --subnets 192.168.1.0/24 --ports 2401,4001
 
 ## Environment
 
-Every flag has an environment variable, `IEC101CTL_<FLAG>` (shown in `--help`), for example `IEC101CTL_URL`, `IEC101CTL_LINK_MODE`, `IEC101CTL_IOA_SIZE` and `IEC101CTL_FORMAT`. A flag given on the command line wins.
+Every flag has an environment variable, shown in `--help`. Its name is `IEC101CTL_` and the flag name in capitals, with `_` for `-`: `IEC101CTL_URL`, `IEC101CTL_LINK_MODE`, `IEC101CTL_IOA_SIZE`, `IEC101CTL_FORMAT`. A flag that means something else in another command has a name of its own:
+
+| Flag | Command | Variable |
+|------|---------|----------|
+| `--type` | `client interrogate`, `client monitor` | `IEC101CTL_TYPES` |
+| `--type` | `client command` | `IEC101CTL_COMMAND_TYPE` (a required flag: the variable does not replace it) |
+| `--ioa` | `client command` | `IEC101CTL_COMMAND_IOA` (a required flag: the variable does not replace it). `IEC101CTL_IOA` is the address list of `client interrogate`, `client read` and `client monitor` |
+| `--mode` | `client command` | `IEC101CTL_COMMAND_MODE` (set alone, it refuses the command, see below) |
+| `--wait-termination` | `client command` | `IEC101CTL_TERMINATION` |
+| `--qualifier` | `client reset` | `IEC101CTL_RESET_QUALIFIER` (a required flag: the variable does not replace it) |
+| `--set` | `client delay` | `IEC101CTL_SET_DELAY` (command line only, see below) |
+| `--method` | `client ping` | `IEC101CTL_PING_METHOD` |
+| `--method` | `client scan` | `IEC101CTL_SCAN_METHOD` |
+| `--force-large-scan` | `discover` | `IEC101CTL_DISCOVER_FORCE_LARGE` |
+| `--format` | `server generate-config` | `IEC101CTL_CONFIG_FORMAT` |
+
+A flag given on the command line wins. A required flag (`--type`, `--ioa` and `--value` of `client command`, `--qualifier` of `client reset`) must be on the command line.
+
+The parameters that decide what a request changes at a station are taken only from the command line:
+
+- `--freeze` of `client counters` other than `read`
+- `--set` of `client delay`
+- `--mode` and `--qualifier` of `client command`
+- `--time` of `client clock` other than `now`
+- a `--ca` that is the broadcast address (255 with `--ca-size 1`, 65535 with `--ca-size 2`: every station of the line) of `client clock`, `client reset`, and `client counters` with such a `--freeze`
+
+When one of them is set by its variable alone, the command runs with the flag's default and says so on stderr before anything is sent: `notice: IEC101CTL_FREEZE=reset is not used: --freeze is taken only from the command line`. The defaults are a counter read, a measurement of the delay without sending one, `--qualifier none`, the current time and `--ca 1`. `--mode` is the exception, since its default executes: with `IEC101CTL_COMMAND_MODE` set and no `--mode`, `client command` sends nothing and exits with 3 (`invalid_flag_combination`, `IEC101CTL_COMMAND_MODE=select is not used: --mode is taken only from the command line; give --mode select to run it so`). Read-only uses of the same variables are unchanged: with `IEC101CTL_CA=255`, `client interrogate` and a counter read still go to every station.

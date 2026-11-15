@@ -55,3 +55,23 @@ func TestRenderings(t *testing.T) {
 		t.Fatal(s)
 	}
 }
+
+// A number JSON has none for is null and named in text and table output; a null element
+// without a name shows as "-".
+func TestNonFiniteRenderings(t *testing.T) {
+	render(t, &Message{Type: "time-tagged-measurands", NonFinite: "NaN"}, "scl=NaN")
+	sets := []DataSet{{GIN: "1.2", TypeName: "float32", Values: []any{nil, 2.5, nil}, NonFinite: []string{"+Inf", "", ""}}}
+	render(t, &GenericResult{Sets: sets}, "+Inf, 2.5, -")
+	r := &GenericResult{GIN: "1.2", Elements: []DescElement{{TypeName: "float64", Values: []any{nil}, NonFinite: []string{"-Inf"}}}}
+	render(t, r, "-Inf")
+	if rows := r.TableRows(); rows[0][len(rows[0])-1] != "-Inf" {
+		t.Errorf("table: %q", rows)
+	}
+	d := &DisturbanceResult{Disturbance: Disturbance{Channels: []Channel{
+		{ACC: 1, Name: "IL1", RPV: nil, RSV: float32(1), RFA: nil, NonFinite: map[string]string{"rpv": "NaN"}, Values: []int16{1}},
+	}}}
+	render(t, d, "rpv=NaN rsv=1 rfa=-")
+	if rows := d.TableRows(); !strings.Contains(strings.Join(rows[0], " "), "NaN 1 -") {
+		t.Errorf("table: %q", rows)
+	}
+}

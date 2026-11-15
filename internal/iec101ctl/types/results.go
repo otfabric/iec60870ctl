@@ -511,7 +511,10 @@ type ServerEvent struct {
 	IOA        uint32 `json:"ioa,omitempty"`
 	Type       string `json:"type,omitempty"`
 	Value      any    `json:"value,omitempty"`
-	Detail     string `json:"detail,omitempty"`
+	// NonFinite names a commanded float JSON has no number for, "NaN", "+Inf" or "-Inf", in
+	// place of Value. Omitted for every other value.
+	NonFinite string `json:"non_finite,omitempty"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 // MarshalTextOutput implements format.TextMarshaler.
@@ -532,6 +535,8 @@ func (e *ServerEvent) MarshalTextOutput() (string, error) {
 	}
 	if e.Value != nil {
 		_, _ = fmt.Fprintf(&b, "  %s", textValue(e.Value))
+	} else if e.NonFinite != "" {
+		_, _ = fmt.Fprintf(&b, "  %s", e.NonFinite)
 	}
 	if e.Detail != "" {
 		_, _ = fmt.Fprintf(&b, "  %s", e.Detail)
@@ -552,7 +557,7 @@ func (e *ServerEvent) TableRows() [][]string {
 		}
 		return strconv.FormatUint(n, 10)
 	}
-	value := ""
+	value := e.NonFinite
 	if e.Value != nil {
 		value = textValue(e.Value)
 	}

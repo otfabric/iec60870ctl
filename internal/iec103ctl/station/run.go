@@ -108,6 +108,8 @@ func Run(ctx context.Context, cfg *config.ServerConfig, log func(types.ServerEve
 		st.event(types.ServerEvent{Event: "disconnected", Remote: c.Remote})
 	}, func(remote string) {
 		st.event(types.ServerEvent{Event: "busy", Remote: remote, Detail: "refused: another controlling system is connected"})
+	}, func(err error) {
+		st.event(types.ServerEvent{Event: "busy", Detail: fmt.Sprintf("accept failed: %v; accepting again", err)})
 	})
 	st.event(types.ServerEvent{Event: "stopping"})
 	if err != nil {

@@ -44,6 +44,8 @@ type Station struct {
 	m     *meterModel
 	opts  Options
 	store *server.Store
+	// queue bounds the class 2 queue of a line: room for the longest answer of the model.
+	queue int
 
 	mu     sync.Mutex
 	fixed  *time.Time    // the clock stands still at this time
@@ -85,6 +87,11 @@ func New(m *Model, opts Options) (*Station, error) {
 		return nil, err
 	}
 	s := &Station{m: mm, opts: opts, store: server.NewStore(), fixed: mm.fixedClock}
+	budget, err := s.frameBudget()
+	if err != nil {
+		return nil, err
+	}
+	s.queue = server.DefaultQueueSize + s.longestAnswer(budget)
 	for _, rec := range mm.recordOrder {
 		for _, p := range mm.periods[rec] {
 			s.store.AddPeriod(rec, p)
@@ -146,6 +153,49 @@ func (s *Station) params() iec102.Params {
 	return p
 }
 
+// frameBudget is the largest ASDU one frame of the line carries, as the library's server
+// counts it.
+func (s *Station) frameBudget() (int, error) {
+	fp, err := iec102.LinkParams(s.opts.LinkAddrSize)
+	if err != nil {
+		return 0, err
+	}
+	return min(fp.MaxData(), iec102.MaxSize), nil
+}
+
+// longestAnswer is the number of ASDUs of the longest answer of the model: the
+// confirmation, the ASDUs of a read of every period of one totals list (a period longer than
+// a frame split as the library's server splits it), of a whole list of events or of the
+// tariff records of one register, and the termination.
+func (s *Station) longestAnswer(budget int) int {
+	header := s.params().HeaderSize()
+	frames := func(items, perFrame int) int { return (items + perFrame - 1) / perFrame }
+	longest := 0
+	lists := map[[2]uint8]int{}
+	for rec, periods := range s.m.periods {
+		for _, p := range periods {
+			w, _ := p.T.IntegratedTotalsType()
+			per := w + 2
+			if p.Signed {
+				per++
+			}
+			n := min(max((budget-header-iec102.SizeTimeA)/per, 1), 127)
+			key := [2]uint8{rec, uint8(p.T.Family())}
+			lists[key] += frames(len(p.Totals), n)
+			longest = max(longest, lists[key])
+		}
+	}
+	for _, pts := range s.m.events {
+		longest = max(longest, frames(len(pts), min((budget-header)/(2+iec102.SizeTimeB), 127)))
+	}
+	if r := s.m.ree; r != nil {
+		for _, t := range r.tariffs {
+			longest = max(longest, len(t.current), len(t.stored))
+		}
+	}
+	return longest + 2
+}
+
 // event writes one event to the log.
 func (s *Station) event(e types.ServerEvent) {
 	if s.opts.Log == nil {
@@ -160,8 +210,10 @@ func (s *Station) event(e types.ServerEvent) {
 }
 
 // Serve runs the station on one line (a TCP connection or a serial port) until ctx ends or
-// the line fails. remote names the peer in the log.
-func (s *Station) Serve(ctx context.Context, rw io.ReadWriteCloser, remote string) {
+// the line fails. remote names the peer in the log. It returns nil when ctx ended, and
+// otherwise the error that ended the line (the error of the transport); nil also when the
+// line ended without one.
+func (s *Station) Serve(ctx context.Context, rw io.ReadWriteCloser, remote string) error {
 	p := s.params()
 	var tracer *meter.Tracer
 	if s.opts.Trace != nil {
@@ -169,7 +221,8 @@ func (s *Station) Serve(ctx context.Context, rw io.ReadWriteCloser, remote strin
 	}
 	cfg := server.Config{
 		LinkAddrSize: s.opts.LinkAddrSize, LinkAddr: s.m.linkAddr, CommonAddr: s.m.commonAddr, Params: p,
-		ProductSpec: s.m.product, Store: s.store, Clock: s.Now,
+		ProductSpec: s.m.product, Store: s.store, Clock: s.Now, QueueSize: s.queue,
+		Logger: libraryLog{s: s, remote: remote},
 	}
 	cfg.Link.FrameGap = s.opts.LinkTimeout
 	cfg.Link.OnFrame = func(tx bool, f ft12.Frame) {
@@ -188,7 +241,7 @@ func (s *Station) Serve(ctx context.Context, rw io.ReadWriteCloser, remote strin
 			s.event(types.ServerEvent{Event: "link-up", Remote: remote})
 		}
 	}
-	h := &handler{s: s}
+	h := &handler{s: s, remote: remote}
 	if s.m.ree != nil {
 		cfg.Handler = &ree.Session{Key: s.m.ree.key, OnSetTime: s.setTime, Next: h}
 	} else {
@@ -198,13 +251,17 @@ func (s *Station) Serve(ctx context.Context, rw io.ReadWriteCloser, remote strin
 	if err != nil {
 		_ = rw.Close()
 		s.event(types.ServerEvent{Event: "disconnected", Remote: remote, Detail: err.Error()})
-		return
+		return err
 	}
 	select {
 	case <-ctx.Done():
 	case <-srv.Done():
 	}
+	if ctx.Err() == nil {
+		err = srv.Err()
+	}
 	_ = srv.Close()
+	return err
 }
 
 // logASDU writes the event of an ASDU on the line: every request received, every refusal
@@ -269,16 +326,54 @@ func (s *Station) logASDU(tx bool, data []byte, p iec102.Params, remote string) 
 	s.event(e)
 }
 
+// libraryLog writes the warnings and errors of go-iec60870-5's server to the event log: an
+// answer it could not queue, an ASDU it could not decode.
+type libraryLog struct {
+	s      *Station
+	remote string
+}
+
+func (libraryLog) Debugf(string, ...any) {}
+func (libraryLog) Infof(string, ...any)  {}
+
+func (l libraryLog) Warnf(format string, args ...any) {
+	l.s.event(types.ServerEvent{Event: "warning", Remote: l.remote, Detail: fmt.Sprintf(format, args...)})
+}
+
+func (l libraryLog) Errorf(format string, args ...any) {
+	l.s.event(types.ServerEvent{Event: "error", Remote: l.remote, Detail: fmt.Sprintf(format, args...)})
+}
+
 // handler answers the REE reads the session passes on: tariff information, contracted
 // powers and special days. Everything else is refused with cause 14.
-type handler struct{ s *Station }
+type handler struct {
+	s      *Station
+	remote string
+}
+
+// notQueued logs an answer to a that could not be queued; the request then ends without
+// the rest of its answer and without its termination.
+func (h *handler) notQueued(a *iec102.ASDU, err error) {
+	ca, rec := a.CommonAddr, a.Record
+	h.s.event(types.ServerEvent{Event: "warning", Remote: h.remote, CommonAddr: &ca, Record: &rec, Type: meter.TypeName(a.Type),
+		Detail: fmt.Sprintf("answer not queued: %v; the request ends without its termination", err)})
+}
+
+// mirror queues a with cause c, and logs it when it cannot be queued.
+func (h *handler) mirror(srv *server.Server, a *iec102.ASDU, c iec102.Cause) bool {
+	if err := srv.Mirror(a, c); err != nil {
+		h.notQueued(a, err)
+		return false
+	}
+	return true
+}
 
 // HandleASDU implements server.Handler.
 func (h *handler) HandleASDU(srv *server.Server, a *iec102.ASDU) {
 	q, ok := a.Body.(ree.Request)
 	r := h.s.m.ree
 	if !ok || r == nil {
-		_ = srv.Mirror(a, iec102.CauseUnknownType)
+		h.mirror(srv, a, iec102.CauseUnknownType)
 		return
 	}
 	var bodies []iec102.Body
@@ -286,7 +381,7 @@ func (h *handler) HandleASDU(srv *server.Server, a *iec102.ASDU) {
 	case ree.C_TA_VC_2, ree.C_TA_VM_2:
 		t, known := r.tariffs[a.Record]
 		if !known {
-			_ = srv.Mirror(a, iec102.CauseUnknownRecordAddr)
+			h.mirror(srv, a, iec102.CauseUnknownRecordAddr)
 			return
 		}
 		recs := t.current
@@ -312,7 +407,7 @@ func (h *handler) HandleASDU(srv *server.Server, a *iec102.ASDU) {
 			bodies = append(bodies, ree.SpecialDays{Days: r.days})
 		}
 	default:
-		_ = srv.Mirror(a, iec102.CauseUnknownType)
+		h.mirror(srv, a, iec102.CauseUnknownType)
 		return
 	}
 	if len(bodies) == 0 {
@@ -320,12 +415,17 @@ func (h *handler) HandleASDU(srv *server.Server, a *iec102.ASDU) {
 		if q.T == ree.C_PC_NA_2 || q.T == ree.C_DF_NA_2 {
 			cause = iec102.CauseNoObject
 		}
-		_ = srv.Mirror(a, cause)
+		h.mirror(srv, a, cause)
 		return
 	}
-	_ = srv.Mirror(a, iec102.CauseActivationCon)
-	for _, b := range bodies {
-		_ = srv.Send(iec102.New(iec102.CauseRequest, a.CommonAddr, a.Record, b))
+	if !h.mirror(srv, a, iec102.CauseActivationCon) {
+		return
 	}
-	_ = srv.Mirror(a, iec102.CauseActivationTerm)
+	for _, b := range bodies {
+		if err := srv.Send(iec102.New(iec102.CauseRequest, a.CommonAddr, a.Record, b)); err != nil {
+			h.notQueued(a, err)
+			return
+		}
+	}
+	h.mirror(srv, a, iec102.CauseActivationTerm)
 }

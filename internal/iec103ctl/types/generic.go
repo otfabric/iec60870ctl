@@ -23,6 +23,10 @@ type DataSet struct {
 	// 8, 22 (and the unsigned types 2, 9, 10, 21, 24), the fields of a structure (23) as
 	// nested values. Absent for the other data types: see Data.
 	Values []any `json:"values,omitempty"`
+	// NonFinite names, for each element of Values, a number JSON has no number for: "NaN",
+	// "+Inf" or "-Inf" where the element is null, "" for every other element. Omitted when
+	// every element is finite.
+	NonFinite []string `json:"non_finite,omitempty"`
 	// Reply is the name of a generic reply code (type 22).
 	Reply string `json:"reply,omitempty"`
 	// Data is the GID as hex.
@@ -38,8 +42,10 @@ type DescElement struct {
 	Size     uint8  `json:"size"`
 	Number   uint8  `json:"number"`
 	Values   []any  `json:"values,omitempty"`
-	Reply    string `json:"reply,omitempty"`
-	Data     string `json:"data"`
+	// NonFinite is as in [DataSet].
+	NonFinite []string `json:"non_finite,omitempty"`
+	Reply     string   `json:"reply,omitempty"`
+	Data      string   `json:"data"`
 }
 
 // GenericResult is the result of `client generic ...`.
@@ -62,7 +68,7 @@ type GenericResult struct {
 	DurationMs float64       `json:"duration_ms"`
 }
 
-func valuesText(values []any, data, reply string) string {
+func valuesText(values []any, nonFinite []string, data, reply string) string {
 	if reply != "" {
 		return "reply " + reply
 	}
@@ -71,9 +77,15 @@ func valuesText(values []any, data, reply string) string {
 	}
 	parts := make([]string, len(values))
 	for i, v := range values {
-		if s, ok := v.(string); ok {
-			parts[i] = strconv.Quote(s)
-		} else {
+		switch x := v.(type) {
+		case string:
+			parts[i] = strconv.Quote(x)
+		case nil:
+			parts[i] = "-"
+			if i < len(nonFinite) && nonFinite[i] != "" {
+				parts[i] = nonFinite[i]
+			}
+		default:
 			parts[i] = fmt.Sprint(v)
 		}
 	}
@@ -91,11 +103,11 @@ func (r *GenericResult) MarshalTextOutput() (string, error) {
 	if r.GIN != "" {
 		_, _ = fmt.Fprintf(&b, "  directory of %s\n", r.GIN)
 		for _, e := range r.Elements {
-			_, _ = fmt.Fprintf(&b, "  kod %-3d %-22s %-10s %s\n", e.KOD, e.KODName, e.TypeName, valuesText(e.Values, e.Data, e.Reply))
+			_, _ = fmt.Fprintf(&b, "  kod %-3d %-22s %-10s %s\n", e.KOD, e.KODName, e.TypeName, valuesText(e.Values, e.NonFinite, e.Data, e.Reply))
 		}
 	}
 	for _, d := range r.Sets {
-		_, _ = fmt.Fprintf(&b, "  %-7s kod %-3d %-22s %-10s %s\n", d.GIN, d.KOD, d.KODName, d.TypeName, valuesText(d.Values, d.Data, d.Reply))
+		_, _ = fmt.Fprintf(&b, "  %-7s kod %-3d %-22s %-10s %s\n", d.GIN, d.KOD, d.KODName, d.TypeName, valuesText(d.Values, d.NonFinite, d.Data, d.Reply))
 	}
 	return b.String(), nil
 }
@@ -109,10 +121,10 @@ func (r *GenericResult) TableHeaders() []string {
 func (r *GenericResult) TableRows() [][]string {
 	var rows [][]string
 	for _, e := range r.Elements {
-		rows = append(rows, []string{r.GIN, strconv.Itoa(int(e.KOD)), e.KODName, e.TypeName, strconv.Itoa(int(e.Size)), strconv.Itoa(int(e.Number)), valuesText(e.Values, e.Data, e.Reply)})
+		rows = append(rows, []string{r.GIN, strconv.Itoa(int(e.KOD)), e.KODName, e.TypeName, strconv.Itoa(int(e.Size)), strconv.Itoa(int(e.Number)), valuesText(e.Values, e.NonFinite, e.Data, e.Reply)})
 	}
 	for _, d := range r.Sets {
-		rows = append(rows, []string{d.GIN, strconv.Itoa(int(d.KOD)), d.KODName, d.TypeName, strconv.Itoa(int(d.Size)), strconv.Itoa(int(d.Number)), valuesText(d.Values, d.Data, d.Reply)})
+		rows = append(rows, []string{d.GIN, strconv.Itoa(int(d.KOD)), d.KODName, d.TypeName, strconv.Itoa(int(d.Size)), strconv.Itoa(int(d.Number)), valuesText(d.Values, d.NonFinite, d.Data, d.Reply)})
 	}
 	return rows
 }

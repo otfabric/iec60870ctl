@@ -56,7 +56,7 @@ type LinkConfig struct {
 // SessionConfig selects the REE profile and its session.
 type SessionConfig struct {
 	Profile       string `env:"IEC102CTL_PROFILE" desc:"Profile: standard, or ree (the Spanish REE profile: decode its types, and with an access key a session around the operation)" flag:"profile"`
-	AccessKey     string `env:"IEC102CTL_ACCESS_KEY" desc:"REE access key of the measuring point, 0-4294967295 (or 0x hex): opens a session (C_AC_NA_2) before and closes it (C_FS_NA_2) after the operation; implies --profile ree" flag:"access-key"`
+	AccessKey     string `env:"IEC102CTL_ACCESS_KEY" desc:"REE access key of the measuring point, 0-4294967295 (or 0x hex): opens a session (C_AC_NA_2) before and closes it (C_FS_NA_2) after the operation; implies --profile ree. Deprecated on the command line, which other users can read: use --access-key-file or the variable" flag:"access-key"`
 	AccessKeyFile string `env:"IEC102CTL_ACCESS_KEY_FILE" desc:"File holding the REE access key (instead of --access-key)" flag:"access-key-file"`
 }
 

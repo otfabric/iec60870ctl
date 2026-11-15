@@ -92,12 +92,28 @@ type Channel struct {
 	ACC  uint8  `json:"acc"`
 	Name string `json:"name"`
 	// RPV, RSV and RFA are the rated primary value, the rated secondary value and the
-	// reference factor of ASDU 27, as the device sent them.
-	RPV float32 `json:"rpv"`
-	RSV float32 `json:"rsv"`
-	RFA float32 `json:"rfa"`
+	// reference factor of ASDU 27, as the device sent them (float32): null for a number
+	// JSON has none for, which NonFinite then names.
+	RPV any `json:"rpv"`
+	RSV any `json:"rsv"`
+	RFA any `json:"rfa"`
+	// NonFinite names, by field ("rpv", "rsv", "rfa"), each of RPV, RSV and RFA that is
+	// NaN or infinite: "NaN", "+Inf" or "-Inf". Omitted when all three are finite.
+	NonFinite map[string]string `json:"non_finite,omitempty"`
 	// Values are the NOE values (SDV, the signed integers of ASDU 30) by value number.
 	Values []int16 `json:"values"`
+}
+
+// rated renders the rated value v of field name for text and table output: the number, or
+// the name NonFinite gives it.
+func (c Channel) rated(name string, v any) string {
+	if v == nil {
+		if n := c.NonFinite[name]; n != "" {
+			return n
+		}
+		return "-"
+	}
+	return fmt.Sprintf("%g", v)
 }
 
 // Disturbance is a recorded disturbance as transferred (clause 7.4.7).
@@ -136,7 +152,7 @@ func (r *DisturbanceResult) MarshalTextOutput() (string, error) {
 	}
 	for _, c := range r.Channels {
 		lo, hi := minMax(c.Values)
-		_, _ = fmt.Fprintf(&b, "  channel acc %-3d %-5s rpv=%g rsv=%g rfa=%g values=%d min=%d max=%d\n", c.ACC, c.Name, c.RPV, c.RSV, c.RFA, len(c.Values), lo, hi)
+		_, _ = fmt.Fprintf(&b, "  channel acc %-3d %-5s rpv=%s rsv=%s rfa=%s values=%d min=%d max=%d\n", c.ACC, c.Name, c.rated("rpv", c.RPV), c.rated("rsv", c.RSV), c.rated("rfa", c.RFA), len(c.Values), lo, hi)
 	}
 	if r.Output != "" {
 		_, _ = fmt.Fprintf(&b, "  record written to %s\n", r.Output)
@@ -168,7 +184,7 @@ func (r *DisturbanceResult) TableRows() [][]string {
 	var rows [][]string
 	for _, c := range r.Channels {
 		lo, hi := minMax(c.Values)
-		rows = append(rows, []string{strconv.Itoa(int(c.ACC)), c.Name, fmt.Sprint(c.RPV), fmt.Sprint(c.RSV), fmt.Sprint(c.RFA),
+		rows = append(rows, []string{strconv.Itoa(int(c.ACC)), c.Name, c.rated("rpv", c.RPV), c.rated("rsv", c.RSV), c.rated("rfa", c.RFA),
 			strconv.Itoa(len(c.Values)), strconv.Itoa(int(lo)), strconv.Itoa(int(hi))})
 	}
 	return rows

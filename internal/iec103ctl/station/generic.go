@@ -170,12 +170,101 @@ func (s *Station) check(d iec103.DataSet) iec103.GRC {
 	return iec103.GRCAck
 }
 
+// The generic writes a line stages (write entry and write with confirmation, before the
+// write with execution or the abort): at most MaxStagedSets data sets for one RII, and at
+// most MaxStagedWrites RIIs at once. A write that would stage more keeps nothing, and its
+// write with execution is refused with cause 41 and reply code 7 (too many commands).
+const (
+	MaxStagedSets   = 64
+	MaxStagedWrites = 4
+)
+
+// session is one line the station serves (a line that has just come up): the generic
+// writes it has staged. They belong to the line alone, and end with it and with a reset
+// of its link.
+type session struct {
+	s *Station
+	// staged are the data sets staged by RII; over the RIIs that staged more than allowed.
+	// Guarded by s.mu.
+	staged map[uint8][]iec103.DataSet
+	over   map[uint8]bool
+}
+
+// open returns the session of a new line.
+func (s *Station) open() *session {
+	c := &session{s: s, staged: map[uint8][]iec103.DataSet{}, over: map[uint8]bool{}}
+	s.mu.Lock()
+	s.sessions[c] = struct{}{}
+	s.mu.Unlock()
+	return c
+}
+
+// end drops the session of a line that ended, with what it staged.
+func (s *Station) end(c *session) {
+	s.mu.Lock()
+	delete(s.sessions, c)
+	s.mu.Unlock()
+}
+
+// clear drops what the line staged.
+func (c *session) clear() {
+	c.s.mu.Lock()
+	defer c.s.mu.Unlock()
+	clear(c.staged)
+	clear(c.over)
+}
+
+// stagedSets returns the number of data sets the lines being served have staged.
+func (s *Station) stagedSets() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for c := range s.sessions {
+		for _, sets := range c.staged {
+			n += len(sets)
+		}
+	}
+	return n
+}
+
+// stage adds sets to what RII rii staged. It reports false, and keeps nothing for rii,
+// when that would be more than MaxStagedSets data sets or more than MaxStagedWrites RIIs.
+// The caller holds s.mu.
+func (c *session) stage(rii uint8, sets []iec103.DataSet) bool {
+	if c.over[rii] {
+		return false
+	}
+	have, ok := c.staged[rii]
+	if (!ok && len(c.staged) >= MaxStagedWrites) || len(have)+len(sets) > MaxStagedSets {
+		delete(c.staged, rii)
+		c.over[rii] = true
+		c.s.event(types.ServerEvent{Event: "generic-write", Detail: fmt.Sprintf("rii=%d outcome=rejected: more than %d data sets or %d writes staged", rii, MaxStagedSets, MaxStagedWrites)})
+		return false
+	}
+	c.staged[rii] = append(have, sets...)
+	return true
+}
+
+// tooMany is the negative answer to a write whose RII staged more than allowed: reply code
+// 7 (too many commands) for each data set of the request.
+func tooMany(sets []iec103.DataSet) []iec103.DataSet {
+	if len(sets) == 0 {
+		return []iec103.DataSet{failed(iec103.GIN{}, iec103.KODNone, iec103.GRCTooManyCommands)}
+	}
+	out := make([]iec103.DataSet, 0, len(sets))
+	for _, d := range sets {
+		out = append(out, failed(d.GIN, d.KOD, iec103.GRCTooManyCommands))
+	}
+	return out
+}
+
 // genericWrite carries out a generic write (ASDU 10, cause 40, clause 7.4.8.6.3, figure
-// 17): write entry (248) stages the data sets, write with confirmation (249) stages and
-// echoes them with cause 44, write with execution (250) applies every staged set and its
-// own when all may be written (cause 40) or none (cause 41 with a reply code per failed
-// set), write abort (251) drops what was staged.
-func (s *Station) genericWrite(srv *server.Server, a *iec103.ASDU, b iec103.GenericData) {
+// 17) on the line of c: write entry (248) stages the data sets, write with confirmation
+// (249) stages and echoes them with cause 44, write with execution (250) applies every
+// staged set and its own when all may be written (cause 40) or none (cause 41 with a
+// reply code per failed set), write abort (251) drops what was staged. What one RII may
+// stage is bounded (MaxStagedSets, MaxStagedWrites).
+func (s *Station) genericWrite(srv *server.Server, c *session, a *iec103.ASDU, b iec103.GenericData) {
 	if a.Cause != iec103.CauseGenericWrite {
 		return
 	}
@@ -184,17 +273,28 @@ func (s *Station) genericWrite(srv *server.Server, a *iec103.ASDU, b iec103.Gene
 	// The writes of table 18; another information number is not answered.
 	switch a.Inf {
 	case iec103.InfWriteEntry:
-		s.staged[b.RII] = append(s.staged[b.RII], b.Sets...)
+		c.stage(b.RII, b.Sets)
 	case iec103.InfWriteConfirm:
-		s.staged[b.RII] = append(s.staged[b.RII], b.Sets...)
+		if !c.stage(b.RII, b.Sets) {
+			_ = srv.GenericAnswer(a, iec103.CauseGenericWriteNack, tooMany(b.Sets)...)
+			return
+		}
 		_ = srv.GenericAnswer(a, iec103.CauseGenericWriteConf, b.Sets...)
 	case iec103.InfWriteAbort:
-		delete(s.staged, b.RII)
+		delete(c.staged, b.RII)
+		delete(c.over, b.RII)
 		_ = srv.GenericAnswer(a, iec103.CauseGenericWriteAck)
 		s.event(types.ServerEvent{Event: "generic-write", Detail: fmt.Sprintf("rii=%d outcome=aborted", b.RII)})
 	case iec103.InfWriteExecute:
-		all := append(s.staged[b.RII], b.Sets...)
-		delete(s.staged, b.RII)
+		all := append(c.staged[b.RII], b.Sets...)
+		over := c.over[b.RII]
+		delete(c.staged, b.RII)
+		delete(c.over, b.RII)
+		if over {
+			_ = srv.GenericAnswer(a, iec103.CauseGenericWriteNack, tooMany(b.Sets)...)
+			s.event(types.ServerEvent{Event: "generic-write", Value: len(b.Sets), Detail: fmt.Sprintf("rii=%d outcome=rejected: too many data sets staged", b.RII)})
+			return
+		}
 		var nack []iec103.DataSet
 		for _, d := range all {
 			if grc := s.check(d); grc != iec103.GRCAck {

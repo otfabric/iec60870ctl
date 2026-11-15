@@ -141,6 +141,10 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		defer statusMu.Unlock()
 		_, _ = fmt.Fprintf(status, format+"\n", args...)
 	}
+	// reached reports whether --count values were written. The count is compared as
+	// uint64: a --count of 2^31 or more stays positive where an int has 32 bits. The
+	// caller holds mu.
+	reached := func() bool { return cfg.Count != 0 && uint64(sum.Values) >= uint64(cfg.Count) }
 	handler := func(a *asdu.ASDU) {
 		if !cfg.All && a.Type.InControlDirection() {
 			return
@@ -151,14 +155,14 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 				continue
 			}
 			mu.Lock()
-			if emitErr != nil || (cfg.Count != 0 && sum.Values >= int(cfg.Count)) {
+			if emitErr != nil || reached() {
 				mu.Unlock()
 				return
 			}
 			p.ReceivedAt = now
 			sum.Values++
 			sum.ByType[p.Type]++
-			done := cfg.Count != 0 && sum.Values >= int(cfg.Count)
+			done := reached()
 			if err := emit(&p); err != nil {
 				emitErr = err
 				done = true

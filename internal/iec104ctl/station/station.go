@@ -23,6 +23,7 @@ import (
 	iec104 "github.com/otfabric/go-iec60870-5/iec104"
 	"github.com/otfabric/go-iec60870-5/iec104/apci"
 	"github.com/otfabric/go-iec60870-5/iec104/server"
+	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/iec104ctl/types"
 )
@@ -93,7 +94,10 @@ type Station struct {
 	selected map[asdu.IOA]selection
 	files    map[asdu.IOA]*file
 	uploads  map[asdu.IOA]upload // the delivered files, by address
-	sessions map[uint64]bool     // sessions that have been announced
+	// incoming are the files being delivered: accepted, not yet stored or ended. They count
+	// against the upload limits as the delivered files do.
+	incoming map[incomingKey]incoming
+	sessions map[uint64]bool // sessions that have been announced
 	// offset is what a clock synchronization moved the station's clock by.
 	offset time.Duration
 
@@ -125,6 +129,7 @@ func New(m *Model, opts Options) (*Station, error) {
 		selected: map[asdu.IOA]selection{},
 		files:    map[asdu.IOA]*file{},
 		uploads:  map[asdu.IOA]upload{},
+		incoming: map[incomingKey]incoming{},
 		sessions: map[uint64]bool{},
 	}
 	for _, spec := range m.Points {
@@ -332,6 +337,12 @@ func (st *Station) sessionState(s *server.Session, state iec104.State, err error
 		for ioa, sel := range st.selected {
 			if sel.session == s.ID() {
 				delete(st.selected, ioa)
+			}
+		}
+		// The files the session was delivering end with it.
+		for k := range st.incoming {
+			if k.session == s.ID() {
+				delete(st.incoming, k)
 			}
 		}
 		st.mu.Unlock()
@@ -702,13 +713,19 @@ func (st *Station) command(s *server.Session, req *asdu.ASDU) {
 		return
 	}
 	v, sel, key := commanded(obj)
-	e.Value = v
+	e.Value, e.NonFinite = format.Finite(v)
 	if baseType(req.Type) != cmd.typ {
 		refuse(fmt.Sprintf("the object takes %s", cmd.typ), 0)
 		return
 	}
 	if !valid(obj) {
 		refuse("value not permitted", 0)
+		return
+	}
+	// No point holds a NaN or an infinite value: such a set point is outside the range of
+	// every point type.
+	if e.NonFinite != "" {
+		refuse("the value is not a finite number", 0)
 		return
 	}
 
@@ -808,6 +825,15 @@ func (st *Station) directory(s *server.Session, ca asdu.CommonAddr, ioa asdu.IOA
 }
 
 func (st *Station) fileDone(s *server.Session, _ asdu.CommonAddr, ioa asdu.IOA, name uint16, err error) {
+	// A delivery that ends without being stored gives its place back.
+	if s != nil {
+		st.mu.Lock()
+		k := incomingKey{session: s.ID(), ioa: ioa}
+		if in, ok := st.incoming[k]; ok && in.name == name {
+			delete(st.incoming, k)
+		}
+		st.mu.Unlock()
+	}
 	e := types.ServerEvent{Event: "file-sent", Remote: remote(s), CommonAddr: uint16(st.ca), IOA: uint32(ioa), Detail: fmt.Sprintf("name %d", name)}
 	if err != nil {
 		e.Detail += ": " + err.Error()
@@ -816,8 +842,10 @@ func (st *Station) fileDone(s *server.Session, _ asdu.CommonAddr, ioa asdu.IOA, 
 }
 
 // AcceptFile implements server.FileSink: a file is taken at an address that is free, or
-// that holds a file delivered earlier.
-func (st *Station) AcceptFile(s *server.Session, ca asdu.CommonAddr, ioa asdu.IOA, _ uint16, length int) bool {
+// that holds a file delivered earlier. An accepted file counts against the upload limits
+// from now on, while it is being delivered, until it is stored or its delivery or its
+// session ends.
+func (st *Station) AcceptFile(s *server.Session, ca asdu.CommonAddr, ioa asdu.IOA, name uint16, length int) bool {
 	st.mu.Lock()
 	_, isPoint := st.points[ioa]
 	_, isCommand := st.commands[ioa]
@@ -825,8 +853,13 @@ func (st *Station) AcceptFile(s *server.Session, ca asdu.CommonAddr, ioa asdu.IO
 	switch {
 	case ca != st.ca || isPoint || isCommand:
 		reason = "the address is in use"
+	case s != nil && s.Context().Err() != nil:
+		reason = "the session has ended"
 	default:
-		reason = st.overLimit(ioa, length)
+		reason = st.overLimit(ioa, length, sessionOf(s))
+	}
+	if reason == "" && s != nil {
+		st.incoming[incomingKey{session: s.ID(), ioa: ioa}] = incoming{name: name, size: length}
 	}
 	st.mu.Unlock()
 	if reason != "" {
@@ -841,23 +874,59 @@ type upload struct {
 	path string // where it was written, or ""
 }
 
+// incomingKey names a file being delivered: by its session and address, as the library
+// keeps one delivery per session and address.
+type incomingKey struct {
+	session uint64
+	ioa     asdu.IOA
+}
+
+// incoming is a file being delivered: its name and the length its session announced.
+type incoming struct {
+	name uint16
+	size int
+}
+
+// sessionOf returns the key of the deliveries of s; nil (a call without a session) has no
+// delivery of its own.
+func sessionOf(s *server.Session) *uint64 {
+	if s == nil {
+		return nil
+	}
+	id := s.ID()
+	return &id
+}
+
 // overLimit says why a file of length octets delivered at ioa would exceed the upload
-// limits of the model, or "" when it fits. A file at an address that already holds a
-// delivered file replaces it. st.mu is held.
-func (st *Station) overLimit(ioa asdu.IOA, length int) string {
+// limits of the model, or "" when it fits. The delivered files and the files being
+// delivered count, apart from the delivery of session at ioa itself (the file being
+// checked). A file at an address that already holds a delivered file replaces it. st.mu is
+// held.
+func (st *Station) overLimit(ioa asdu.IOA, length int, session *uint64) string {
 	maxFiles, maxSize, maxTotal := st.model.Uploads.limits()
 	if length > maxSize {
 		return fmt.Sprintf("larger than uploads.max_file_size %d", maxSize)
 	}
-	_, replaces := st.uploads[ioa]
-	if !replaces && len(st.uploads) >= maxFiles {
-		return fmt.Sprintf("uploads.max_files %d reached", maxFiles)
+	self := func(k incomingKey) bool { return session != nil && k.session == *session && k.ioa == ioa }
+	addresses := make(map[asdu.IOA]bool, len(st.uploads)+len(st.incoming))
+	for a := range st.uploads {
+		addresses[a] = true
 	}
 	total := length
 	for a, u := range st.uploads {
 		if a != ioa {
 			total += u.size
 		}
+	}
+	for k, in := range st.incoming {
+		if self(k) {
+			continue
+		}
+		addresses[k.ioa] = true
+		total += in.size
+	}
+	if !addresses[ioa] && len(addresses) >= maxFiles {
+		return fmt.Sprintf("uploads.max_files %d reached", maxFiles)
 	}
 	if total > maxTotal {
 		return fmt.Sprintf("uploads.max_total_size %d reached", maxTotal)
@@ -875,10 +944,14 @@ func (st *Station) StoreFile(s *server.Session, _ asdu.CommonAddr, ioa asdu.IOA,
 	// Uploads of several sessions may have been accepted at once: the limits are checked
 	// again, and the file's place reserved, under one lock.
 	st.mu.Lock()
-	reason := st.overLimit(ioa, f.Len())
+	reason := st.overLimit(ioa, f.Len(), sessionOf(s))
 	old, hadOld := st.uploads[ioa]
 	if reason == "" {
 		st.uploads[ioa] = upload{size: f.Len(), path: path}
+	}
+	// The delivery ends here: stored, the file counts as delivered; refused, it is gone.
+	if s != nil {
+		delete(st.incoming, incomingKey{session: s.ID(), ioa: ioa})
 	}
 	st.mu.Unlock()
 	if reason != "" {

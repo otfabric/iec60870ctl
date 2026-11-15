@@ -7,6 +7,7 @@ independent implementations come as published container images.
 | Tier | Make target | CI | What it shows |
 |------|-------------|----|---------------|
 | Unit and command tests | `make test` (race detector) | CI, go 1.26 and 1.27 | every command through `Run`: stdout, stderr and exit code, error paths included, against the tool's simulated station on a loopback port |
+| 32-bit | `GOARCH=386 go test ./...` (Linux) | CI (`test-386` job) | the unit and command tests where `int` has 32 bits, as on linux/arm/v7: counts and limits hold there too |
 | Coverage | `make coverage-pkg-check` | CI (`tools` job) and Codecov | at least 90 % of the statements, in total and in every package, measured across the module (`-coverpkg=./...`) |
 | Fuzz | `make fuzz FUZZTIME=10s` | CI (go-ci, 10 s per target) | every parser of user input: URLs, address lists and ranges, values, types, times, station models, security names; targets are discovered, never listed |
 | Hostile peers and chaos | `make chaos CHAOS_SEEDS=20` | CI (`tools` job) | `TestHostile…`: a peer that floods, stalls, sends garbage or malformed frames, never ends a procedure, closes mid-exchange. `TestChaos…`: commands through a link that drops, corrupts, splits, duplicates, delays and cuts traffic, by seed; every run ends within its time-out with a documented exit code and leaves no goroutines |

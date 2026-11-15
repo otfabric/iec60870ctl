@@ -70,9 +70,30 @@ type ConnConfig struct {
 	CommonAddrHint uint16
 }
 
-func (c *ConnConfig) wantsTLS() bool {
+func (c *ConnConfig) wantsTLS() bool { return len(c.TLSFlags()) > 0 }
+
+// TLSFlags names the TLS flags of c that are set (by the flag or by its variable), in the
+// order of the help: "--tls", "--tls-ca", "--tls-cert", "--tls-key", "--tls-server-name",
+// "--tls-insecure". With --ip any of them turns TLS on; a tcp:// URL connects without TLS.
+func (c *ConnConfig) TLSFlags() []string {
 	t := c.TLSConfig
-	return t.TLS || t.CACert != "" || t.Cert != "" || t.Key != "" || t.ServerName != "" || t.Insecure
+	var flags []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"--tls", t.TLS},
+		{"--tls-ca", t.CACert != ""},
+		{"--tls-cert", t.Cert != ""},
+		{"--tls-key", t.Key != ""},
+		{"--tls-server-name", t.ServerName != ""},
+		{"--tls-insecure", t.Insecure},
+	} {
+		if f.set {
+			flags = append(flags, f.name)
+		}
+	}
+	return flags
 }
 
 // StationConfig is a connection plus the common address of the station that is addressed.
@@ -130,7 +151,7 @@ type MonitorConfig struct {
 type CommandConfig struct {
 	StationConfig
 	Type         string `env:"IEC104CTL_COMMAND_TYPE" desc:"Command type: single, double, step, setpoint-normalized, setpoint-scaled, setpoint-float or bitstring (or the type name, e.g. C_SC_NA_1)" flag:"type"`
-	IOA          uint32 `env:"IEC104CTL_IOA" desc:"Information object address of the command" flag:"ioa"`
+	IOA          uint32 `env:"IEC104CTL_COMMAND_IOA" desc:"Information object address of the command" flag:"ioa"`
 	Value        string `env:"IEC104CTL_VALUE" desc:"Value: on/off (single, double), higher/lower (step), a number (set points), a 32-bit number or 0x hex (bitstring)" flag:"value"`
 	Mode         string `env:"IEC104CTL_COMMAND_MODE" desc:"Procedure: execute (direct), select (select only), sbo (select, then execute) or cancel (select, then deactivate the selection)" flag:"mode"`
 	Qualifier    string `env:"IEC104CTL_QUALIFIER" desc:"Qualifier of command: none, short (short pulse), long (long pulse) or persistent; a number 0-127 for set points" flag:"qualifier"`
@@ -175,14 +196,14 @@ type ScanConfig struct {
 // FileListConfig drives `client file list`.
 type FileListConfig struct {
 	StationConfig
-	IOA          uint32 `env:"IEC104CTL_IOA" desc:"Information object address of the directory (0 = the station's default directory)" flag:"ioa"`
+	IOA          uint32 `env:"IEC104CTL_FILE_IOA" desc:"Information object address of the directory (0 = the station's default directory)" flag:"ioa"`
 	OutputFormat string `env:"IEC104CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 
 // FileGetConfig drives `client file get`.
 type FileGetConfig struct {
 	StationConfig
-	IOA          uint32 `env:"IEC104CTL_IOA" desc:"Information object address of the file" flag:"ioa"`
+	IOA          uint32 `env:"IEC104CTL_FILE_IOA" desc:"Information object address of the file" flag:"ioa"`
 	Name         uint16 `env:"IEC104CTL_FILE_NAME" desc:"Name of file (NOF), a number 0-65535" flag:"name"`
 	Output       string `env:"IEC104CTL_OUTPUT" desc:"File to write the content to (- = stdout)" flag:"output"`
 	OutputFormat string `env:"IEC104CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
@@ -191,7 +212,7 @@ type FileGetConfig struct {
 // FilePutConfig drives `client file put`.
 type FilePutConfig struct {
 	StationConfig
-	IOA          uint32 `env:"IEC104CTL_IOA" desc:"Information object address of the file" flag:"ioa"`
+	IOA          uint32 `env:"IEC104CTL_FILE_IOA" desc:"Information object address of the file" flag:"ioa"`
 	Name         uint16 `env:"IEC104CTL_FILE_NAME" desc:"Name of file (NOF), a number 0-65535" flag:"name"`
 	Input        string `env:"IEC104CTL_INPUT" desc:"File whose content is sent" flag:"input"`
 	SectionSize  uint32 `env:"IEC104CTL_SECTION_SIZE" desc:"Octets per section (0 = the whole file as one section)" flag:"section-size"`
@@ -215,6 +236,10 @@ type DiscoverConfig struct {
 	Debug        bool     // set from global --debug (root persistent flag)
 }
 
+// DefaultMaxSessions is the number of simultaneous connections `server start` serves
+// unless --max-sessions says otherwise (0 = no limit).
+const DefaultMaxSessions = 16
+
 // ServerConfig drives `server start`.
 type ServerConfig struct {
 	LinkConfig
@@ -226,7 +251,7 @@ type ServerConfig struct {
 	Key          string   `env:"IEC104CTL_TLS_KEY" desc:"PEM file with the private key of --tls-cert" flag:"tls-key"`
 	ClientCA     string   `env:"IEC104CTL_TLS_CLIENT_CA" desc:"PEM file with the CA certificates clients must present a certificate of (mutual TLS)" flag:"tls-client-ca"`
 	Allow        []string `env:"IEC104CTL_ALLOW" desc:"Only accept clients from these addresses or CIDR prefixes (default: any)" flag:"allow"`
-	MaxSessions  uint16   `env:"IEC104CTL_MAX_SESSIONS" desc:"Maximum number of simultaneous connections (0 = no limit)" flag:"max-sessions"`
+	MaxSessions  uint16   `env:"IEC104CTL_MAX_SESSIONS" desc:"Maximum number of simultaneous connections; a further one is closed at once (0 = no limit)" flag:"max-sessions"`
 	Duration     uint32   `env:"IEC104CTL_DURATION" desc:"Stop after this many seconds (0 = until interrupted)" flag:"duration"`
 	OutputFormat string   `env:"IEC104CTL_FORMAT" desc:"Format of the event log on stdout: text, json, or table" flag:"format"`
 	Debug        bool     // set from global --debug (root persistent flag)

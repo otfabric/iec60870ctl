@@ -177,7 +177,7 @@ func Read(ctx context.Context, cfg *config.ReadConfig, trace io.Writer) (*types.
 	}
 	defer func() { _ = s.Close() }()
 
-	res := &types.ReadResult{Target: s.Target.String(), CommonAddr: cfg.CommonAddr, Requested: ioas.Count(), Rows: []types.ReadRow{}}
+	res := &types.ReadResult{Target: s.Target.String(), CommonAddr: cfg.CommonAddr, Requested: int(ioas.Count()), Rows: []types.ReadRow{}}
 	var fatal error
 	ioas.Each(func(ioa uint32) bool {
 		a, err := s.Read(ctx, asdu.CommonAddr(cfg.CommonAddr), asdu.IOA(ioa))

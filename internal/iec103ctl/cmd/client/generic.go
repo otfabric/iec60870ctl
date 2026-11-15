@@ -6,6 +6,8 @@ import (
 	"context"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/envflag"
+	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/types"
@@ -187,13 +189,18 @@ the value --value.
   --mode execute  write with execution (INF 250): the device checks the value and activates
                   it, answering with cause 40, or refuses it with cause 41 and a generic
                   reply code (exit code 6). This is the default.
-  --mode abort    write entry (INF 248), then write abort (INF 251): the device takes the
+  --mode abort    write entry (INF 248), then write abort (INF 251): the device stages the
                   value and drops it again; nothing is activated. It shows how the device
-                  handles the two steps.
+                  handles the two steps. The abort is also sent when the write entry fails
+                  or times out, or Ctrl-C ends it, and once more when the device does not
+                  answer it within --timeout; an error says whether the abort was
+                  acknowledged, or that the value may still be staged on the device.
 
 THIS CHANGES THE DEVICE: a setting written with execution is in force at once, on a
 protection relay a pick-up value or a delay. Everything is validated before anything is
-sent, and the write is sent exactly once.`,
+sent, and the write is sent exactly once (only the abort of --mode abort may be sent
+again). --mode is taken only from the command line: with IEC103CTL_WRITE_MODE set and no
+--mode, the command is refused (exit code 3) and nothing is sent.`,
 		Example: `
   # Pick-up current 1.25 (an R32.23 setting)
   iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.2 --type float32 --value 1.25
@@ -208,8 +215,17 @@ sent, and the write is sent exactly once.`,
 		cli.MustMarkFlagRequired(cmd, f)
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		// The mode decides whether the value is activated, and its default (execute) does
+		// more than abort: a mode from IEC103CTL_WRITE_MODE refuses the command, before
+		// anything else is validated or sent.
+		fromEnv := envflag.NotFromEnvironment(cmd, "mode")
 		return formatted(cmd, cfg.OutputFormat, &cfg.Debug,
-			func() error { return iec.CheckGenericWrite(&cfg) },
+			func() error {
+				if fromEnv != nil {
+					return errs.InvalidInput(errs.CodeInvalidFlagCombination, fromEnv.Error(), nil)
+				}
+				return iec.CheckGenericWrite(&cfg)
+			},
 			func(ctx context.Context) (*types.GenericResult, error) {
 				return iec.GenericWriteSet(ctx, &cfg, cmd.ErrOrStderr())
 			})

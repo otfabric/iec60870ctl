@@ -51,9 +51,13 @@ func newStartCmd() *cobra.Command {
 
 The line is TCP, as a terminal server carries it (--listen, --port 2401), or a serial port
 (--serial with --baud, --data-bits, --parity and --stop-bits). Over TCP one controlling
-system is served at a time: a connection that arrives while one is served is closed at
-once. Every connection is a line that has just come up (link state and queues start
-afresh); the process state (indications, generic values) lives as long as the server.
+system is served at a time: a connection that arrives while one is served waits up to
+half a second for it to end and is then closed ("busy"); while four wait, a further one is
+closed at once. Every connection is a line that has just come up (link state and queues
+start afresh); the process state (indications, generic values) lives as long as the
+server. A generic write staged on a line (write entry, write with confirmation) belongs to
+that line: it ends with the line and with a reset CU or reset FCB, and one write stages at
+most 64 data sets.
 
 The device answers the link start-up with its identification, a time synchronization with
 the time it set, a general interrogation with its indications, the general commands of the

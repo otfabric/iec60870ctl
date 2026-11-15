@@ -76,6 +76,8 @@ Durations are strings such as `500ms`, `5s` or `2m`.
 | `min`, `max` | Bounds of `ramp`, `sine` and `random` |
 | `step` | Increment of `ramp` and `count` (default 1); period of `sine`, in intervals (default 60) |
 
+`min`, `max` and `step` are finite numbers: `.nan`, `.inf` and `-.inf` are refused, as they are for `value`.
+
 | Mode | For | Behaviour |
 |------|-----|-----------|
 | `toggle` | single and double points | flips between off and on |
@@ -110,7 +112,7 @@ How the station handles a command:
 
 - A command to an address that is not a command of the model, or of another type than the object takes, is answered with "unknown information object address" (cause 47); a cause other than activation or deactivation with "unknown cause of transmission" (cause 45).
 - **Deactivation**: confirmed (cause 9), and a selection of the object is cleared.
-- A value that is not permitted (a double or step command state 0 or 3) is answered with a negative confirmation.
+- A value that is not permitted (a double or step command state 0 or 3) is answered with a negative confirmation, and so is a set point in short floating point that is NaN or infinite, which no point holds: the target keeps its value, and the `command` event names the number in `non_finite`.
 - **Select** (S/E = 1): confirmed, and remembered for the line until `select_timeout`.
 - **Execute**: when the object is selected, the execute must come from the same line and be for the same value and qualifier; otherwise it is refused and the selection is dropped. With `select_required` an execute without a selection is refused. Otherwise: activation confirmation, the **report** of the target with its CP56Time2a type and `report_cause`, and the activation termination, in this order, on the line of the command.
 - A selection ends with its line.

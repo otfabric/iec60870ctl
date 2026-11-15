@@ -36,7 +36,7 @@ The device identifies itself after a reset of the communication unit (cause 4, I
 | `dpi` | initial state: 1 OFF, 2 ON (0 and 3 are allowed as states) |
 | `name` | free text |
 | `gi` | `false` keeps it out of the general interrogation (default true) |
-| `simulate` | when set, the indication toggles every so many milliseconds (at least 100) and the change is sent spontaneously (cause 1) |
+| `simulate` | when set, the indication toggles every so many milliseconds (100 to 86400000, one day) and the change is sent spontaneously (cause 1) |
 
 The general interrogation answers every indication that takes part, in the model's order, with ASDU 1, cause 9 and the scan number, then the termination; with disturbances the list of recorded disturbances follows (ASDU 23, cause 31).
 
@@ -63,8 +63,10 @@ The general interrogation answers every indication that takes part, in the model
 | INF 245 general interrogation of generic data | KOD 1 of every entry, then the end (cause 10) |
 | INF 248 write entry | staged, no answer |
 | INF 249 write with confirmation | staged and echoed with cause 44 |
-| INF 250 write with execution | every staged and given data set of KOD 1 to a writable entry with its type and size is applied, cause 40; otherwise none is, cause 41 with a reply code per failed set: 1 (GIN not defined), 8 (read only), 5 (another type, size or KOD) |
+| INF 250 write with execution | every staged and given data set of KOD 1 to a writable entry with its type and size is applied, cause 40; otherwise none is, cause 41 with a reply code per failed set: 1 (GIN not defined), 8 (read only), 5 (another type, size or KOD), 7 (too many commands: the write staged more than allowed, below) |
 | INF 251 write abort | the staged sets are dropped, cause 40 |
+
+What is staged belongs to the line (the connection) that staged it: it is dropped when the line ends and when the controlling system resets the link (reset CU or reset FCB), and a later line never executes it. One RII stages at most 64 data sets, and at most 4 RIIs have staged data at once. A write entry beyond that keeps nothing for its RII, a write with confirmation beyond it is answered with cause 41, and the write with execution of that RII is refused with cause 41 and reply code 7 (too many commands).
 
 A read of an entry or group the device lacks, or of another KOD, is answered with cause 43 and generic reply code 1 (GIN not defined) or 2 (data do not exist). Written values live as long as the server.
 
@@ -76,4 +78,4 @@ The list and the transfer run go-iec60870-5's procedure of clause 7.4.7 (figure 
 
 ## The process state and the lines
 
-Over TCP one controlling system is served at a time; every connection is a line that has just come up (link state, class 1 and class 2 queues and the clock offset start afresh), while the indications and the generic values live as long as the server. A serial port is one line for the whole run.
+Over TCP one controlling system is served at a time; every connection is a line that has just come up (link state, class 1 and class 2 queues and the clock offset start afresh), while the indications and the generic values live as long as the server; generic writes that a line staged end with it. A serial port is one line for the whole run.

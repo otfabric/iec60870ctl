@@ -22,7 +22,7 @@ type LinkConfig struct {
 	CommonAddress uint16 `env:"IEC103CTL_COMMON_ADDRESS" desc:"Common address of ASDU, 1-255 (0 = the link address, the normal case of clause 7.2.4)" flag:"common-address"`
 	LinkTimeout   uint32 `env:"IEC103CTL_LINK_TIMEOUT" desc:"Milliseconds to wait for the answer to a frame before it is repeated (0 = 1000)" flag:"link-timeout"`
 	Retries       int    `env:"IEC103CTL_RETRIES" desc:"How often an unanswered frame is repeated, 0-10" flag:"retries"`
-	ResetFCB      bool   `env:"IEC103CTL_RESET_FCB" desc:"Initialize the link with reset FCB (function 7) instead of reset CU (function 0)" flag:"reset-fcb"`
+	ResetFCB      bool   `env:"IEC103CTL_RESET_FCB" desc:"Initialize the link with reset FCB (function 7) instead of reset CU (function 0), which empties the device's transmit buffers" flag:"reset-fcb"`
 	PollInterval  uint32 `env:"IEC103CTL_POLL_INTERVAL" desc:"Milliseconds between class 2 polls when the equipment has nothing to send (0 = 100)" flag:"poll-interval"`
 	TimeZone      string `env:"IEC103CTL_TIMEZONE" desc:"Time zone of the time tags on the wire: utc, local or an IANA name such as Europe/Brussels (default utc)" flag:"timezone"`
 }
@@ -57,8 +57,8 @@ type CommandConfig struct {
 // ClockConfig drives `client clock`.
 type ClockConfig struct {
 	ConnConfig
-	Time         string `env:"IEC103CTL_TIME" desc:"Time to set: now, or an RFC 3339 time such as 2026-01-31T12:00:00Z" flag:"time"`
-	Broadcast    bool   `env:"IEC103CTL_BROADCAST" desc:"Send the synchronization to every device on the line (link address 255, send/no reply): nothing confirms it" flag:"broadcast"`
+	Time         string `env:"IEC103CTL_TIME" desc:"Time to set: now, or an RFC 3339 time such as 2026-01-31T12:00:00Z; other than now, command line only (the variable is not used)" flag:"time"`
+	Broadcast    bool   `env:"IEC103CTL_BROADCAST" desc:"Send the synchronization to every device on the line (link address 255, send/no reply): nothing confirms it; command line only (the variable is not used)" flag:"broadcast"`
 	OutputFormat string `env:"IEC103CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 
@@ -107,7 +107,7 @@ type GenericWriteConfig struct {
 	Type         string `env:"IEC103CTL_DATA_TYPE" desc:"Data type of the value: ascii (1), uint (3), int (4), float32 (7) or float64 (8)" flag:"type"`
 	Size         uint16 `env:"IEC103CTL_SIZE" desc:"DATASIZE: octets of the value (uint, int: 1-8; ascii: the length of the text when 0)" flag:"size"`
 	Value        string `env:"IEC103CTL_VALUE" desc:"The value: text for ascii, a number for the others" flag:"value"`
-	Mode         string `env:"IEC103CTL_WRITE_MODE" desc:"Procedure: execute (write with execution, INF 250) or abort (write entry, then write abort: nothing is activated)" flag:"mode"`
+	Mode         string `env:"IEC103CTL_WRITE_MODE" desc:"Procedure: execute (write with execution, INF 250) or abort (write entry, then write abort: nothing is activated); command line only (with the variable set and no --mode the write is refused)" flag:"mode"`
 	OutputFormat string `env:"IEC103CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 

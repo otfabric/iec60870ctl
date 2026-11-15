@@ -104,7 +104,7 @@ type MonitorConfig struct {
 type CommandConfig struct {
 	StationConfig
 	Type         string `env:"IEC101CTL_COMMAND_TYPE" desc:"Command type: single, double, step, setpoint-normalized, setpoint-scaled, setpoint-float or bitstring (or the type name, e.g. C_SC_NA_1)" flag:"type"`
-	IOA          uint32 `env:"IEC101CTL_IOA" desc:"Information object address of the command" flag:"ioa"`
+	IOA          uint32 `env:"IEC101CTL_COMMAND_IOA" desc:"Information object address of the command" flag:"ioa"`
 	Value        string `env:"IEC101CTL_VALUE" desc:"Value: on/off (single, double), higher/lower (step), a number (set points), a 32-bit number or 0x hex (bitstring)" flag:"value"`
 	Mode         string `env:"IEC101CTL_COMMAND_MODE" desc:"Procedure: execute (direct), select (select only), sbo (select, then execute) or cancel (select, then deactivate the selection)" flag:"mode"`
 	Qualifier    string `env:"IEC101CTL_QUALIFIER" desc:"Qualifier of command: none, short (short pulse), long (long pulse) or persistent; a number 0-127 for set points" flag:"qualifier"`

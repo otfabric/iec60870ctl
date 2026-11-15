@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/otfabric/iec60870ctl/internal/errs"
 )
 
 // Default ports: 2404 is the IANA port of IEC 60870-5-104, 19998 the one IEC 62351-3
@@ -82,14 +84,25 @@ func ParseURL(raw string) (Target, error) {
 
 // ResolveTarget returns the station a client command talks to: --url, or --ip with --port.
 // The two styles are mutually exclusive, and one of them is required. With --ip, TLS is
-// used when a TLS flag asks for it, on the port given (2404 unless --port is set).
+// used when a TLS flag asks for it, on the port given (2404 unless --port is set). With
+// --url the scheme decides: a TLS flag with a tcp:// URL is refused with a usage error
+// (invalid_flag_combination).
 func (c *ConnConfig) ResolveTarget() (Target, error) {
 	url, ip := strings.TrimSpace(c.URL), strings.TrimSpace(c.IP)
 	switch {
 	case url != "" && ip != "":
 		return Target{}, fmt.Errorf("--url and --ip are mutually exclusive")
 	case url != "":
-		return ParseURL(url)
+		t, err := ParseURL(url)
+		if err != nil {
+			return Target{}, err
+		}
+		if flags := c.TLSFlags(); !t.TLS && len(flags) > 0 {
+			return Target{}, errs.New(errs.KindUsage, errs.CodeInvalidFlagCombination,
+				fmt.Sprintf("%s cannot be used with the URL %s: a tcp:// URL connects without TLS; give a tls:// URL (tls://%s) to connect with TLS",
+					strings.Join(flags, ", "), url, t.Addr()), nil)
+		}
+		return t, nil
 	case ip != "":
 		port := c.Port
 		if port == 0 {

@@ -56,8 +56,9 @@ themselves and are reported as spontaneous events; measured values can be sent
 periodically. Files are served and, when the model accepts uploads, taken.
 
 Events are queued while no controlling station has data transfer started and are delivered
-to the next one, and the station serves any number of connections, of which one receives
-the events (redundancy as in IEC 60870-5-104).
+to the next one, and the station serves up to --max-sessions connections (16 by default,
+0 = no limit), of which one receives the events (redundancy as in IEC 60870-5-104). A
+further connection is closed at once.
 
 Every event (connections, requests, commands, file transfers) is written to stdout as it
 happens: one line with --format text, one JSON object per line with --format json, or one
@@ -90,7 +91,7 @@ interfaces by default and accepts any client: use --listen and --allow to restri
   iec104ctl server start --config station.yaml --duration 60
 `,
 	}
-	cfg := config.ServerConfig{OutputFormat: string(format.FormatText)}
+	cfg := config.ServerConfig{OutputFormat: string(format.FormatText), MaxSessions: config.DefaultMaxSessions}
 	cfg.AssociationID = 1
 	runner.RegisterCommandCfg(cmd, &cfg, func(c *cobra.Command) {
 		_ = c.MarkFlagFilename("config", "yaml", "yml", "json")

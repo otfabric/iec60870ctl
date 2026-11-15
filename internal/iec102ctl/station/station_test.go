@@ -71,7 +71,7 @@ func serve(t *testing.T, st *Station, la, ca uint16, p iec102.Params) *client.Cl
 	a, b := net.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { defer close(done); st.Serve(ctx, a, "pipe") }()
+	go func() { defer close(done); _ = st.Serve(ctx, a, "pipe") }()
 	c, err := client.New(b, client.Config{LinkAddr: la, CommonAddr: ca, Params: p, RequestTimeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)

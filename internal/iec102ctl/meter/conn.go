@@ -342,10 +342,15 @@ func (t *Tracer) line(dir, text string) {
 }
 
 // DescribeASDU describes the octets of an ASDU for a trace. The access key of C_AC_NA_2 is
-// not shown.
+// not shown: of an ASDU whose type identification (its first octet) is C_AC_NA_2 only the
+// length is, also when it does not decode.
 func DescribeASDU(data []byte, p iec102.Params) string {
+	key := len(data) > 0 && iec102.TypeID(data[0]) == ree.C_AC_NA_2
 	a, err := iec102.Decode(data, p)
-	if err != nil {
+	switch {
+	case err != nil && key:
+		return fmt.Sprintf("undecodable ASDU: %v  [%s, %d octets, access key hidden]", err, TypeName(ree.C_AC_NA_2), len(data))
+	case err != nil:
 		return fmt.Sprintf("undecodable ASDU: %v  [% x]", err, data)
 	}
 	name := TypeName(a.Type)

@@ -89,7 +89,7 @@ func compileTotals(m *Model, loc *time.Location, out *meterModel) error {
 		return fmt.Errorf("totals: more than %d lists", MaxRecords)
 	}
 	seen := map[[2]uint8]bool{}
-	n := 0
+	n, totals := 0, 0
 	for i, l := range m.Totals {
 		where := fmt.Sprintf("totals[%d] (record %d)", i, l.Record)
 		typ, err := l.typeOf()
@@ -102,9 +102,12 @@ func compileTotals(m *Model, loc *time.Location, out *meterModel) error {
 		}
 		seen[key] = true
 		width, _ := typ.IntegratedTotalsType()
-		periods, err := l.periods(typ, loc)
+		periods, err := l.periods(typ, loc, MaxTotals-totals)
 		if err != nil {
 			return fmt.Errorf("%s: %w", where, err)
+		}
+		for _, p := range periods {
+			totals += len(p.Totals)
 		}
 		if len(periods) == 0 {
 			return fmt.Errorf("%s: no periods", where)
@@ -143,10 +146,19 @@ func compileTotals(m *Model, loc *time.Location, out *meterModel) error {
 }
 
 // periods returns the periods of a totals list: the listed ones, then the generated ones.
-func (l TotalsSpec) periods(typ iec102.TypeID, loc *time.Location) ([]iec102.IntegratedTotals, error) {
+// room is how many totals the list may hold, so that the model stays within MaxTotals; it is
+// checked before anything is generated.
+func (l TotalsSpec) periods(typ iec102.TypeID, loc *time.Location, room int) ([]iec102.IntegratedTotals, error) {
 	var out []iec102.IntegratedTotals
 	if len(l.Periods) > MaxPeriods {
 		return nil, fmt.Errorf("more than %d periods", MaxPeriods)
+	}
+	listed := 0
+	for _, p := range l.Periods {
+		listed += len(p.Totals)
+	}
+	if listed > room {
+		return nil, fmt.Errorf("more than %d totals in all", MaxTotals)
 	}
 	for j, p := range l.Periods {
 		end, err := meter.ParseTimeA(p.End, loc)
@@ -167,6 +179,17 @@ func (l TotalsSpec) periods(typ iec102.TypeID, loc *time.Location) ([]iec102.Int
 			return nil, errors.New("generate.interval: at least 1m (time a counts minutes)")
 		case len(g.Totals) == 0:
 			return nil, errors.New("generate.totals: none")
+		case len(g.Totals) > MaxPeriodTotals:
+			return nil, fmt.Errorf("generate.totals: %d, a period has at most %d addresses", len(g.Totals), MaxPeriodTotals)
+		case g.Count > (room-listed)/len(g.Totals):
+			return nil, fmt.Errorf("generate: %d periods of %d totals, more than %d totals in all", g.Count, len(g.Totals), MaxTotals)
+		}
+		addrs := map[uint8]bool{}
+		for _, t := range g.Totals {
+			if addrs[t.Address] {
+				return nil, fmt.Errorf("generate.totals: address %d twice", t.Address)
+			}
+			addrs[t.Address] = true
 		}
 		start, err := meter.ParseTimeA(g.Start, loc)
 		if err != nil {
@@ -243,6 +266,9 @@ func compileREE(r *REESpec, loc *time.Location) (*reeModel, error) {
 		}
 		out.days = append(out.days, t)
 	}
+	if err := out.fitOneAnswer(); err != nil {
+		return nil, err
+	}
 	for i, t := range r.Tariffs {
 		where := fmt.Sprintf("ree.tariffs[%d] (register %d)", i, t.Register)
 		if _, ok := out.tariffs[t.Register]; ok {
@@ -269,6 +295,35 @@ func compileREE(r *REESpec, loc *time.Location) (*reeModel, error) {
 		out.tariffs[t.Register] = tr
 	}
 	return out, nil
+}
+
+// fitOneAnswer refuses contracted powers and special days that one ASDU cannot carry: each
+// is answered by one ASDU, and the smallest frame of a line (a two-octet link address and
+// common address) carries 48 contracted powers and 49 special days.
+func (r *reeModel) fitOneAnswer() error {
+	fp, err := iec102.LinkParams(2)
+	if err != nil {
+		return err
+	}
+	budget := min(fp.MaxData(), iec102.MaxSize)
+	p := iec102.Params{CommonAddrSize: 2, Profile: ree.Profile}
+	fits := func(b iec102.Body) bool {
+		raw, err := iec102.New(iec102.CauseRequest, 1, 0, b).Encode(p)
+		return err == nil && len(raw) <= budget
+	}
+	most := func(n int, body func(n int) iec102.Body) int {
+		for n > 0 && !fits(body(n)) {
+			n--
+		}
+		return n
+	}
+	if n := most(len(r.powers), func(n int) iec102.Body { return ree.ContractedPowers{Powers: r.powers[:n]} }); n < len(r.powers) {
+		return fmt.Errorf("ree.contracted_powers: %d, one answer carries at most %d", len(r.powers), n)
+	}
+	if n := most(len(r.days), func(n int) iec102.Body { return ree.SpecialDays{Days: r.days[:n]} }); n < len(r.days) {
+		return fmt.Errorf("ree.special_days: %d, one answer carries at most %d", len(r.days), n)
+	}
+	return nil
 }
 
 func tariffRecord(r TariffRecordSpec, loc *time.Location) (ree.TariffRecord, error) {

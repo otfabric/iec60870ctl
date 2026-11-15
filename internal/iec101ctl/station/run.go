@@ -104,6 +104,9 @@ func Run(ctx context.Context, cfg *config.ServerConfig, log func(types.ServerEve
 		func(ctx context.Context, c line.Conn) { _ = st.ServeLine(ctx, c, c.Remote) },
 		func(remote string) {
 			st.event(types.ServerEvent{Event: "busy", Remote: remote, Detail: "refused: a line has one controlling station"})
+		},
+		func(err error) {
+			st.event(types.ServerEvent{Event: "busy", Detail: fmt.Sprintf("accept failed: %v; accepting again", err)})
 		})
 	if err != nil {
 		return errs.New(errs.KindTransport, errs.CodeListenFailed, fmt.Sprintf("server stopped: %v", err), err)

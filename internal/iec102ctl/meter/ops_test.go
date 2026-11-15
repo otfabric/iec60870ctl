@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-iec60870-5/iec102"
+	"github.com/otfabric/go-iec60870-5/iec102/ree"
 	"github.com/otfabric/iec60870ctl/internal/errs"
 	"github.com/otfabric/iec60870ctl/internal/iec102ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec102ctl/meter"
@@ -393,6 +394,30 @@ func TestDescribeASDU(t *testing.T) {
 	}
 	if d := meter.DescribeASDU([]byte{1}, p); !strings.Contains(d, "undecodable") {
 		t.Errorf("short: %s", d)
+	}
+	// An access key that does not decode, with an octet more or cut short: no octet of the
+	// key is shown, with the REE profile and without.
+	rp := iec102.Params{Profile: ree.Profile}
+	login, err := iec102.New(iec102.CauseActivation, 1, 0, ree.AccessKey{Key: 0xA1B2C3D4}).Encode(rp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"one octet more": append(append([]byte{}, login...), 0x99),
+		"cut short":      login[:len(login)-2],
+		"type only":      login[:1],
+	} {
+		for _, params := range []iec102.Params{rp, p} {
+			d := meter.DescribeASDU(data, params)
+			if !strings.Contains(d, "hidden") || !strings.Contains(d, "C_AC_NA_2") {
+				t.Errorf("%s: %s, want the type and the key hidden", name, d)
+			}
+			for _, key := range []string{"d4 c3", "c3 b2", "b2 a1", "d4c3b2a1", "2712847316"} {
+				if strings.Contains(strings.ToLower(d), key) {
+					t.Errorf("%s: %s shows %q of the key", name, d, key)
+				}
+			}
+		}
 	}
 	tr := &meter.Tracer{W: io.Discard}
 	tr.Discard([]byte{1, 2}, errors.New("checksum"))

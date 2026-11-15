@@ -4,8 +4,10 @@ package client
 
 import (
 	"context"
+	"strings"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
+	"github.com/otfabric/iec60870ctl/internal/envflag"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/iec"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/types"
@@ -103,7 +105,9 @@ The time is sent in the zone --timezone names (UTC by default): the zone the dev
 their clock in, since the time tag carries none.
 
 THIS CHANGES THE DEVICE: the time tags of its events follow its clock. The command is
-sent once and not repeated.`,
+sent once and not repeated. --broadcast, and --time other than now, are taken only from
+the command line: IEC103CTL_BROADCAST and IEC103CTL_TIME are not used, and a line on
+stderr says so.`,
 		Example: `
   iec103ctl client clock --url tcp://10.0.0.20
   iec103ctl client clock --url serial:///dev/ttyUSB0 --timezone Europe/Brussels
@@ -113,11 +117,24 @@ sent once and not repeated.`,
 	cfg := config.ClockConfig{ConnConfig: connDefaults(), Time: "now", OutputFormat: stdoutFormat}
 	wire(cmd, &cfg)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		clockCommandLineOnly(cmd, &cfg)
 		return formatted(cmd, cfg.OutputFormat, &cfg.Debug,
 			func() error { return iec.CheckClock(&cfg) },
 			func(ctx context.Context) (*types.ClockResult, error) { return iec.Clock(ctx, &cfg, cmd.ErrOrStderr()) })
 	}
 	return cmd
+}
+
+// clockCommandLineOnly takes the settings of the synchronization that decide what it
+// changes from the command line alone, before they are validated: --broadcast (every
+// device of the line takes it), and --time other than now. A value from IEC103CTL_BROADCAST
+// or IEC103CTL_TIME is not used; a line on stderr names it.
+func clockCommandLineOnly(cmd *cobra.Command, cfg *config.ClockConfig) {
+	flags := []string{"broadcast"}
+	if t := strings.TrimSpace(cfg.Time); t != "" && !strings.EqualFold(t, "now") {
+		flags = append(flags, "time")
+	}
+	envflag.CommandLineOnly(cmd, flags...)
 }
 
 func newIdentifyCmd() *cobra.Command {

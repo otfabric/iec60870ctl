@@ -15,6 +15,7 @@ These conventions are a **stable contract** for scripting. Field names are snake
 | Times | RFC 3339 with milliseconds. `timestamp` is the time tag of an object, in the zone `--timezone` names; `received_at` is when a value arrived, in UTC |
 | Durations | `duration_ms`, `rtt_ms`, `measured_ms` (numbers, milliseconds with fractions) |
 | Repeated rows | `points`, `rows`, `steps`, `stations`, `types`, `devices`: **arrays of objects**, empty arrays rather than null |
+| Numbers JSON cannot hold | a NaN or infinite short float a station sent (M_ME_NC_1, a set point or parameter in float) is `"value": null` with `"non_finite": "NaN"`, `"+Inf"` or `"-Inf"`; text and table output show the same name. `non_finite` is omitted for every other value. The command goes on: `client monitor` keeps streaming |
 | A row that failed | `error` object (`kind`, `code`, `message`); omitted when the row is fine |
 | Fatal error | one object `{"error": {"kind", "code", "message"}}` on stdout, nothing else |
 
@@ -25,7 +26,8 @@ One information object as a station reported it. Used by `client interrogate`, `
 | Field | Meaning |
 |-------|---------|
 | `ca`, `ioa`, `type`, `type_id`, `cause`, `cot` | as above |
-| `value` | boolean for single points and single commands; string for double points (`"off"`, `"on"`, `"intermediate"`, `"indeterminate"`) and step commands (`"higher"`, `"lower"`); number for everything else; `null` for a type without a value |
+| `value` | boolean for single points and single commands; string for double points (`"off"`, `"on"`, `"intermediate"`, `"indeterminate"`) and step commands (`"higher"`, `"lower"`); number for everything else; `null` for a type without a value, and for a NaN or infinite float (see `non_finite`) |
+| `non_finite` | `"NaN"`, `"+Inf"` or `"-Inf"` for a float JSON has no number for; `value` is then `null`. Omitted otherwise |
 | `quality` | `"good"`, or the set flags joined with `\|` (`"NT\|IV"`; flags `OV`, `BL`, `SB`, `NT`, `IV`, and `EI` for protection events). Omitted for types without a quality descriptor |
 | `timestamp`, `timestamp_invalid` | the time tag, for types that carry one (`…_TA_1`, `…_TB_1` and so on); `timestamp_invalid` when the IV bit of the time tag is set |
 | `negative`, `test` | the P/N and T bits of the ASDU; omitted when not set |
@@ -49,7 +51,7 @@ One information object as a station reported it. Used by `client interrogate`, `
 | `client types` | `count`, `types`: `id`, `name`, `description`, `direction` (`"monitor"` or `"control"`), `time_tag`, `decoded` |
 | `discover` | `subnets`, `ports`, `hosts` (addresses probed), `found`, `duration_ms`, `devices`: `ip`, `port`, `status` (`"iec101"` or `"open"`), `link_address` (the address asked), `rtt_ms` |
 | `version --json` | one line, keys in this order: `name`, `version`, `tag`, `commit`, `built`, `libraries` (`name`, `version`), `go`, `platform`; as for every tool of the repository. `IEC101CTL_FORMAT=json` gives the same |
-| `server start` (stream) | one event per line (JSON Lines): `timestamp`, `event`, and where they apply `remote` (the TCP peer, or the serial URL), `ca`, `ioa`, `type`, `value`, `detail`. Events: `listening`, `connected`, `busy` (a TCP connection turned away while a line is served), `link-up`, `link-down`, `disconnected`, `refused` (an unknown common address or type), `interrogation`, `counter-interrogation`, `read`, `command`, `clock`, `delay`, `reset`, `test`, `stopping` |
+| `server start` (stream) | one event per line (JSON Lines): `timestamp`, `event`, and where they apply `remote` (the TCP peer, or the serial URL), `ca`, `ioa`, `type`, `value`, `non_finite` (in place of `value` for a NaN or infinite set point, which the station refuses), `detail`. Events: `listening`, `connected`, `busy` (a TCP connection turned away while a line is served, after it waited up to half a second for that line to end, or at once while four wait; also an accept that failed, `detail` naming the error, after which the server accepts again), `link-up`, `link-down`, `disconnected`, `refused` (an unknown common address or type), `interrogation`, `counter-interrogation`, `read`, `command`, `clock`, `delay`, `reset`, `test`, `stopping` |
 
 ## Streams and stderr
 

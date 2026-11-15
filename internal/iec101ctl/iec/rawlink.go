@@ -13,18 +13,21 @@ import (
 
 // rawLink is a link station of its own on an open line, for the link procedures that the
 // controlling station of go-iec60870-5 does not expose: request status of link (function
-// 9) and the test function for link (function 2, balanced). It sends no user data.
+// 9) and the test function for link (function 2, balanced). It sends no user data, and
+// takes none.
 type rawLink struct {
 	pri *link.Primary
 	bal *link.Balanced
 }
 
-// discardUser is the user of a balanced raw link: it takes the peer's user data and
-// drops it, so that the peer's primary direction does not stall.
-type discardUser struct{}
+// refuseUser is the user of a balanced raw link. It does not take the peer's user data:
+// the link answers user data with confirmation with a negative acknowledgement (NACK with
+// DFC set, "secondary link busy"), so that the peer keeps its data, events included, for
+// the controlling station that asks for it.
+type refuseUser struct{}
 
-func (discardUser) UserData([]byte) bool { return true }
-func (discardUser) Reset(bool)           {}
+func (refuseUser) UserData([]byte) bool { return false }
+func (refuseUser) Reset(bool)           {}
 
 // openRaw starts a raw link station on rw with the link parameters of l. Every frame is
 // waited for timeout and not repeated: a probe asks once. trace, when not nil, receives
@@ -37,7 +40,7 @@ func openRaw(rw io.ReadWriter, l Link, timeout time.Duration, trace *Tracer) (*r
 		trace.Attach(&cfg)
 	}
 	if l.Params.Mode == iec101.ModeBalanced {
-		b, err := link.NewBalanced(rw, cfg, link.BalancedConfig{Addr: l.Remote, Remote: l.Addr, DIR: true}, discardUser{})
+		b, err := link.NewBalanced(rw, cfg, link.BalancedConfig{Addr: l.Remote, Remote: l.Addr, DIR: true}, refuseUser{})
 		if err != nil {
 			return nil, err
 		}

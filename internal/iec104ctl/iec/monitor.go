@@ -24,6 +24,10 @@ import (
 // the --count values.
 var monitorDial = Dial
 
+// monitorReconnect is the backoff of the reconnection after a lost connection; the zero
+// value is the library's (1 s, doubling up to 30 s). A test shortens or lengthens it.
+var monitorReconnect = client.Reconnect{}
+
 // MonitorSummary is printed to stderr when `client monitor` ends.
 type MonitorSummary struct {
 	Target     string
@@ -67,6 +71,13 @@ func monitorCA(s string) (ca asdu.CommonAddr, set bool, err error) {
 		return 0, false, err
 	}
 	return asdu.CommonAddr(n), true, nil
+}
+
+// countReached reports whether values has reached --count; a count of 0 is no count. The
+// comparison is made in 64 bits, so that every count of the uint32 flag holds on a
+// platform with a 32-bit int as well.
+func countReached(values int, count uint32) bool {
+	return count != 0 && int64(values) >= int64(count)
 }
 
 // CheckMonitor validates the configuration of `client monitor`.
@@ -131,14 +142,14 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 				continue
 			}
 			mu.Lock()
-			if emitErr != nil || (cfg.Count != 0 && sum.Values >= int(cfg.Count)) {
+			if emitErr != nil || countReached(sum.Values, cfg.Count) {
 				mu.Unlock()
 				return
 			}
 			p.ReceivedAt = now
 			sum.Values++
 			sum.ByType[p.Type]++
-			done := cfg.Count != 0 && sum.Values >= int(cfg.Count)
+			done := countReached(sum.Values, cfg.Count)
 			if err := emit(&p); err != nil {
 				emitErr = err
 				done = true
@@ -174,7 +185,7 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		}),
 	}
 	if !cfg.NoReconnect {
-		opts = append(opts, client.WithReconnect(client.Reconnect{}))
+		opts = append(opts, client.WithReconnect(monitorReconnect))
 	}
 	if cfg.Interrogate {
 		opts = append(opts, client.WithStartHandler(func(sctx context.Context, c *client.Client) {
@@ -190,7 +201,7 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		// set up: the handler then stops ctx, and Dial fails only because of that. That is
 		// the end the user asked for, not an interruption.
 		mu.Lock()
-		reached := emitErr != nil || (cfg.Count != 0 && sum.Values >= int(cfg.Count))
+		reached := emitErr != nil || countReached(sum.Values, cfg.Count)
 		eerr := emitErr
 		mu.Unlock()
 		if !reached || parent.Err() != nil {

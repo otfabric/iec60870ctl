@@ -18,6 +18,6 @@ What iec102ctl does not do, and why. Most of it follows from go-iec60870-5 v0.7.
 - **No writing of contracted powers or configuration.** No source gives the layout of the REE requests that change them (C_MC_NA_2, C_MR_NA_2, C_MF_NA_2); `client request` can send one if you know its octets, at your own risk.
 - **Raw types.** M_EI_NA_2, the REE configuration (M_RM_NA_2), the blocks (M_IB_TG_2, M_IB_TK_2) and the extension types 150..163 are shown as hex by `client request`.
 - **Signatures** are shown, not checked: their computation is not documented.
-- **Session enforcement.** The simulated meter answers its reads without an open session, as the contract's stations do; a real REE meter may refuse them.
+- **Session enforcement.** The simulated meter answers without an open session, as the contract's stations do: its reads of totals, events, the clock and the product, the REE reads of tariffs (C_TA_VC_2, C_TA_VM_2), contracted powers (C_PC_NA_2) and special days (C_DF_NA_2), and clock setting (C_CS_TA_2). A real REE meter may refuse them outside a session.
 - **One link address per line.** Neither the client nor the server polls or serves several stations on a shared (multi-drop) line.
 - **The frame count bit is one bit** (IEC 60870-5-2): over a transport that could reorder frames a repetition may be taken as a new request. A serial line and one TCP connection deliver in order.

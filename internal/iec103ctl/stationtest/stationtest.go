@@ -103,6 +103,14 @@ func (s *Station) HasEvent(kind string) bool {
 // Start serves model (JSON or YAML) on a loopback port until the test ends.
 func Start(t testing.TB, model string, edit ...func(*station.Options)) *Station {
 	t.Helper()
+	return StartChanged(t, model, nil, edit...)
+}
+
+// StartChanged is Start with change applied to the model after the device was built from
+// it, past the model's own checks: a device that sends what no valid model holds (a rated
+// value that is NaN).
+func StartChanged(t testing.TB, model string, change func(*station.Model), edit ...func(*station.Options)) *Station {
+	t.Helper()
 	m, err := station.Parse([]byte(model), false)
 	if err != nil {
 		t.Fatalf("stationtest: model: %v", err)
@@ -120,6 +128,9 @@ func Start(t testing.TB, model string, edit ...func(*station.Options)) *Station 
 	if err != nil {
 		t.Fatalf("stationtest: %v", err)
 	}
+	if change != nil {
+		change(m)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("stationtest: listen: %v", err)
@@ -129,7 +140,7 @@ func Start(t testing.TB, model string, edit ...func(*station.Options)) *Station 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = line.Serve(ctx, ln, func(ctx context.Context, c line.Conn) { _ = st.Serve(ctx, c, c.Remote) }, nil)
+		_ = line.Serve(ctx, ln, func(ctx context.Context, c line.Conn) { _ = st.Serve(ctx, c, c.Remote) }, nil, nil)
 	}()
 	t.Cleanup(func() {
 		cancel()

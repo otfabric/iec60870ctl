@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/otfabric/iec60870ctl/internal/envflag"
 	"github.com/otfabric/iec60870ctl/internal/format"
 	"github.com/otfabric/iec60870ctl/internal/iec102ctl/config"
 	"github.com/otfabric/iec60870ctl/internal/iec102ctl/meter"
@@ -23,8 +24,8 @@ func newREECmd() *cobra.Command {
 Eléctrica de España). None of them is part of IEC 60870-5-102; their layouts come from
 gisce/iec870ree, daiiniel/IEC60870-5-102 and recorded meter traffic, not from an REE
 document (see docs/iec102ctl/LIMITATIONS.md). Every command here decodes the REE types, and
-runs inside a session when an access key is given (--access-key, --access-key-file or
-IEC102CTL_ACCESS_KEY): most REE meters answer only within one.`,
+runs inside a session when an access key is given (--access-key-file or
+IEC102CTL_ACCESS_KEY; --access-key is deprecated): most REE meters answer only within one.`,
 	}
 	cmd.AddCommand(newLoginCmd(), newSetTimeCmd(), newTariffsCmd(), newPowersCmd(), newSpecialDaysCmd())
 	return cmd
@@ -39,7 +40,7 @@ again (C_FS_NA_2). Nothing else is sent. A meter that refuses the key (P/N bit) 
 command with exit code 6 and the code login_refused; a logout that is not confirmed gives
 exit code 7.`,
 		Example: `
-  iec102ctl client ree login --url tcp://10.0.0.20 --access-key 7
+  iec102ctl client ree login --url tcp://10.0.0.20 --access-key-file meter.key
   IEC102CTL_ACCESS_KEY=7 iec102ctl client ree login --url serial:///dev/ttyUSB0
 `,
 	}
@@ -62,18 +63,20 @@ names: it must be the zone the meter keeps its clock in, which also sets the SU 
 
 THIS CHANGES THE METER: the integration periods it records follow its clock. The request is
 validated before anything is sent and sent once; it is never repeated, also not when its
-confirmation does not arrive.`,
+confirmation does not arrive. --time is taken only from the command line: IEC102CTL_TIME is
+not used, and a notice on stderr says so.`,
 		Example: `
   # Synchronize a Spanish meter with this computer
-  iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key 7 --timezone Europe/Madrid
+  iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key-file meter.key --timezone Europe/Madrid
 
   # A given time b
-  iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key 7 --time 2026-02-03T04:05:06.789
+  iec102ctl client ree set-time --url tcp://10.0.0.20 --access-key-file meter.key --time 2026-02-03T04:05:06.789
 `,
 	}
 	cfg := config.SetTimeConfig{ConnConfig: config.Defaults(), Time: "now", OutputFormat: string(format.FormatText)}
 	wire(cmd, &cfg)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		envflag.CommandLineOnly(cmd, "time")
 		return run(cmd, &cfg.ConnConfig, cfg.OutputFormat, func() error { return meter.CheckSetTime(&cfg) },
 			func(ctx context.Context, w io.Writer) (*types.SetTimeResult, error) {
 				return meter.SetTime(ctx, &cfg, w)
@@ -92,8 +95,8 @@ the stored values of the billing periods that end in the range (C_TA_VM_2). Each
 has the absolute and incremental active and reactive energies, the maximum demand with its
 time, the excess power and the billing period.`,
 		Example: `
-  iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key 7
-  iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key 7 --from 2025-11-01 --to 2026-01-01 --format json
+  iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key-file meter.key
+  iec102ctl client ree tariffs --url tcp://10.0.0.20 --access-key-file meter.key --from 2025-11-01 --to 2026-01-01 --format json
 `,
 	}
 	cfg := config.TariffsConfig{ConnConfig: config.Defaults(), Register: 134, OutputFormat: string(format.FormatText)}
@@ -115,7 +118,7 @@ func newPowersCmd() *cobra.Command {
 M_PC_NA_2. The meter writes them; iec102ctl has no command to change them, because no
 source we hold gives the layout of that request.`,
 		Example: `
-  iec102ctl client ree contracted-powers --url tcp://10.0.0.20 --access-key 7
+  iec102ctl client ree contracted-powers --url tcp://10.0.0.20 --access-key-file meter.key
 `,
 	}
 	cfg := config.REEReadConfig{ConnConfig: config.Defaults(), OutputFormat: string(format.FormatText)}
@@ -135,7 +138,7 @@ func newSpecialDaysCmd() *cobra.Command {
 		Short: "Read the special days of the tariff calendar (C_DF_NA_2)",
 		Long:  `Send C_DF_NA_2 and print the special days (holidays) of the answer M_DF_NA_2.`,
 		Example: `
-  iec102ctl client ree special-days --url tcp://10.0.0.20 --access-key 7 --format table
+  iec102ctl client ree special-days --url tcp://10.0.0.20 --access-key-file meter.key --format table
 `,
 	}
 	cfg := config.REEReadConfig{ConnConfig: config.Defaults(), OutputFormat: string(format.FormatText)}

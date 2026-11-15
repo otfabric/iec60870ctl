@@ -24,7 +24,10 @@ func NewCmd() *cobra.Command {
 		Long: `Commands that poll one item of protection equipment as a controlling system does
 (the primary station of unbalanced transmission, IEC 60870-5-103 clause 6.2.3): open the
 line, initialize the link (request status of link, reset of the communication unit), run
-one application function and close the line again.
+one application function and close the line again. The reset of the communication unit
+(reset CU) empties the device's transmit buffers: class 1 and class 2 data not yet polled,
+events among them, are lost to the station controller. --reset-fcb initializes the link
+with reset FCB instead, which keeps them.
 
 The line is --url: tcp://host[:port] for a terminal server (port 2401 by default), or
 serial:///dev/ttyUSB0 (serial://COM3 on Windows) with --baud, --data-bits, --parity and

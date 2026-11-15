@@ -22,7 +22,11 @@ func FuzzParse(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(data)
-	for _, s := range []string{"", "{}", "null", "- a\n- b\n", "station: {common_address: 1}\npoints:\n  - {ioa: 1, type: M_SP_NA_1, value: true}\n", "station: {common_address: 1, colour: red}", "points: [{}]\n", "\xff\xfe", "a: &a [*a]\n"} {
+	for _, s := range []string{"", "{}", "null", "- a\n- b\n", "station: {common_address: 1}\npoints:\n  - {ioa: 1, type: M_SP_NA_1, value: true}\n", "station: {common_address: 1, colour: red}", "points: [{}]\n", "\xff\xfe", "a: &a [*a]\n",
+		"station: {common_address: 1}\npoints: [{ioa: 1, type: M_SP_NA_1}]\nfiles: [{ioa: 2, name: 1, size: 9223372036854775807}]\n",
+		"station: {common_address: 1}\npoints: [{ioa: 1, type: M_SP_NA_1}]\nfiles: [{ioa: 2, name: 1, size: 16777215, section_size: 70000}, {ioa: 3, name: 1, content: x}]\n",
+		"station: {common_address: 1}\npoints: [{ioa: 1, type: M_ME_NC_1, value: 1, simulate: {mode: ramp, interval: 1s, min: .nan, max: .inf}}]\n",
+	} {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -30,10 +34,28 @@ func FuzzParse(f *testing.F) {
 		if err != nil {
 			return
 		}
-		// Validate reads the files a model names: no input gets to pick them here.
-		m.Files = nil
+		// Validate looks up the files a model names by path: no input gets to pick them
+		// here. Files given by size or content are checked from the model.
+		files := m.Files[:0]
+		for _, file := range m.Files {
+			if file.Path == "" {
+				files = append(files, file)
+			}
+		}
+		m.Files = files
 		if m.Validate() != nil {
 			return
+		}
+		for _, file := range m.Files {
+			if file.Size > maxIOA || len(file.Content) > maxIOA {
+				t.Fatalf("a file of more than %d octets validated: %+v", maxIOA, file)
+			}
+		}
+		finite := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+		for _, p := range m.Points {
+			if s := p.Simulate; s != nil && (!finite(s.Min) || !finite(s.Max) || !finite(s.Step)) {
+				t.Fatalf("a simulation with a bound that is not a finite number validated: %+v", s)
+			}
 		}
 		out, err := m.Encode(false)
 		if err != nil {

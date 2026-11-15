@@ -6,6 +6,10 @@ run-name: Release (${{ inputs.version || inputs.bump }}) from ${{ github.ref_nam
 # vX.Y.Z, the next version follows the newest v* tag (or is given with `version`), and the
 # release carries the assets of iec101ctl, iec102ctl, iec103ctl and iec104ctl.
 #
+# The commit that is tested, built and stamped into the binaries is the dispatched one for
+# a new tag, and the commit of the newest tag with bump none, which rebuilds that tag's
+# assets from its own commit, whatever branch it is dispatched from.
+#
 # The release notes are the section of RELEASE.md whose heading is exactly "## vX.Y.Z", up
 # to the line "---"; without one the release stops before tagging. Assets are named as
 # go-binary-release.yml names them (<tool>-<version>-<os>-<arch>.tar.gz / .zip,
@@ -39,6 +43,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       tools: ${{ steps.version.outputs.tools }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -75,16 +80,22 @@ jobs:
             fi
           fi
           tag="v$version"
+          commit=$GITHUB_SHA
+          if [ -z "$WANT" ] && [ "$BUMP" = none ]; then
+            commit=$(git rev-list -n1 "refs/tags/$tag")
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tools=$tools" >> "$GITHUB_OUTPUT"
-          echo "Releasing $tools as $tag (previous: ${latest:-none})"
+          echo "Releasing $tools as $tag from $commit (previous: ${latest:-none})"
       - name: Release notes from RELEASE.md
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          COMMIT: ${{ steps.version.outputs.commit }}
         run: |
           set -euo pipefail
-          awk -v h="## $TAG" '$0 == h { on = 1; next } on && $0 == "---" { exit } on' RELEASE.md > notes.md
+          git show "$COMMIT:RELEASE.md" | awk -v h="## $TAG" '$0 == h { on = 1; next } on && $0 == "---" { exit } on' > notes.md
           [ -s notes.md ] || { echo "::error::RELEASE.md has no section '## $TAG'"; exit 1; }
           cat notes.md
       - uses: actions/upload-artifact@v7
@@ -98,6 +109,8 @@ jobs:
     needs: prepare
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -113,6 +126,8 @@ jobs:
         target: [linux/amd64, linux/arm64, linux/arm/v7, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
       - name: Resolve Go version
         id: go
         run: echo "version=$(sed -nE 's/^go ([0-9]+\.[0-9]+).*/\1/p' go.mod | head -n1)" >> "$GITHUB_OUTPUT"
@@ -125,7 +140,7 @@ jobs:
           TOOLS: ${{ needs.prepare.outputs.tools }}
           VERSION: ${{ needs.prepare.outputs.version }}
           TAG: ${{ needs.prepare.outputs.tag }}
-          COMMIT: ${{ github.sha }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail

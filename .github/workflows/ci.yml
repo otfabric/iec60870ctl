@@ -46,3 +46,21 @@ jobs:
         run: make e2e
       - name: Chaos and hostile peers
         run: make chaos CHAOS_SEEDS=20
+
+  # The tests on a 32-bit platform, where int has 32 bits (linux/arm/v7 is a released
+  # target). linux/386 runs natively on the runner; the race detector does not exist there.
+  test-386:
+    name: Tests on linux/386
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Vet and test as linux/386
+        env:
+          GOARCH: "386"
+        run: |
+          go vet ./...
+          go test -count=1 ./...

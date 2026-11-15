@@ -52,10 +52,11 @@ generate-config").
 
 The line is TCP by default: the station listens on --listen and --port (2401) and serves
 one controlling station at a time, as a terminal server carries one line; a connection
-that arrives while one is served is closed at once. Every connection is a line that has
-just come up (the link starts afresh), while the process state of the station (values,
-clock) lives on. With --serial the station serves a serial port instead, with --baud,
---data-bits, --parity and --stop-bits.
+that arrives while one is served waits up to half a second for it to end and is then
+closed ("busy"), and while four wait, a further one is closed at once. Every connection
+is a line that has just come up (the link starts afresh), while the process state of the
+station (values, clock) lives on. With --serial the station serves a serial port
+instead, with --baud, --data-bits, --parity and --stop-bits.
 
 The link flags must match the controlling station: --link-mode (unbalanced: the station
 answers polls with class 1 data, its events and confirmations, and class 2 data, its

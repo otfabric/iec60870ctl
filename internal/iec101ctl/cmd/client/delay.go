@@ -46,7 +46,7 @@ when the link layer delivered it.`,
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
-			func() error { return iec.CheckDelay(&cfg) },
+			func() error { return checkedDelay(cmd, &cfg) },
 			func(ctx context.Context) (any, error) { return iec.Delay(ctx, &cfg, cmd.ErrOrStderr()) })
 	}
 	return cmd
