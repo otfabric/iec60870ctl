@@ -5,6 +5,19 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.11.1
+
+**Date:** 2026-11-15
+**Previous release:** v0.11.0
+
+No command or flag is added or changed.
+
+### Changed
+
+- Built on go-serial v0.4.1 (was v0.4.0): on Windows a serial write that times out returns an error together with the bytes written, where it returned a short count without one; on Linux, macOS and the BSDs a port path that is not a character device is refused when it is opened; reads wait correctly on OpenBSD (go-serial RELEASE.md, v0.4.1). This reaches the serial lines of iec101ctl, iec102ctl and iec103ctl.
+
+---
+
 ## v0.11.0
 
 **Date:** 2026-11-14
