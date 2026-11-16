@@ -5,6 +5,19 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.12.2
+
+**Date:** 2026-11-16
+**Previous release:** v0.12.1
+
+No command or flag is added or changed.
+
+### Changed
+
+- Built on go-iec60870-5 v0.9.0 (was v0.8.0) (go-iec60870-5 RELEASE.md, v0.9.0).
+
+---
+
 ## v0.12.1
 
 **Date:** 2026-11-16
