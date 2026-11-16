@@ -1,6 +1,6 @@
 # iec103ctl limitations
 
-What iec103ctl does not do, and why. Most of it follows from go-iec60870-5 v0.7.0 (its LIMITATIONS.md and docs/iec103/INTEROPERABILITY.md).
+What iec103ctl does not do, and why. Most of it follows from go-iec60870-5 v0.8.0 (its LIMITATIONS.md and docs/iec103/INTEROPERABILITY.md).
 
 ## Sources and evidence
 
