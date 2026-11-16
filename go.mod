@@ -3,7 +3,7 @@ module github.com/otfabric/iec60870ctl
 go 1.26.0
 
 require (
-	github.com/otfabric/go-iec60870-5 v0.8.0
+	github.com/otfabric/go-iec60870-5 v0.9.0
 	github.com/otfabric/go-serial v0.5.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
