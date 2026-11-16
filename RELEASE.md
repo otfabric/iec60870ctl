@@ -5,6 +5,19 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.12.1
+
+**Date:** 2026-11-16
+**Previous release:** v0.12.0
+
+No command or flag is added or changed.
+
+### Changed
+
+- Built on go-iec60870-5 v0.8.0 (was v0.7.0) and go-serial v0.5.0 (was v0.4.1) (go-iec60870-5 RELEASE.md, v0.8.0; go-serial RELEASE.md, v0.5.0). For the tool this means: the state changes of the IEC 101, 102 and 103 stations reach it one at a time and in order, the closed state last; on Windows a serial device must be given by its device name (`COM3`, `COM10`, `\\.\COM10`, a device interface name), another form is refused when the port is opened, and every port has a `COM` name. docs/iec102ctl/LIMITATIONS.md and docs/iec103ctl/LIMITATIONS.md name go-iec60870-5 v0.8.0.
+
+---
+
 ## v0.12.0
 
 **Date:** 2026-11-15
