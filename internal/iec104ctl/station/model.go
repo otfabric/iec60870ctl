@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -52,6 +53,8 @@ type Model struct {
 	Commands []CommandSpec `yaml:"commands,omitempty" json:"commands,omitempty"`
 	Files    []FileSpec    `yaml:"files,omitempty" json:"files,omitempty"`
 	Uploads  UploadSpec    `yaml:"uploads,omitempty" json:"uploads"`
+	// Redundancy declares the redundancy groups and the event queue of the station.
+	Redundancy RedundancySpec `yaml:"redundancy,omitempty" json:"redundancy,omitempty"`
 
 	// dir is the directory of the model file: relative paths in the model start there.
 	dir string
@@ -131,6 +134,126 @@ type FileSpec struct {
 	Size    int    `yaml:"size,omitempty" json:"size,omitempty"`
 	// SectionSize is the number of octets per section. Default 2048.
 	SectionSize int `yaml:"section_size,omitempty" json:"section_size,omitempty"`
+}
+
+// RedundancySpec declares the redundancy groups of the station (IEC 60870-5-104 clause 10,
+// redundant connections) and the size of their event queues.
+type RedundancySpec struct {
+	// EventQueue is how many events each redundancy group buffers while no connection of
+	// it has data transfer started, and until the controlling station acknowledges them;
+	// when it is full the oldest event is dropped. 0 means DefaultEventQueue.
+	EventQueue int `yaml:"event_queue,omitempty" json:"event_queue,omitempty"`
+	// Groups are the redundancy groups. A connection belongs to the first group that allows
+	// its address, and one that no group allows is refused. Without groups every connection
+	// is a session of its own.
+	Groups []GroupSpec `yaml:"groups,omitempty" json:"groups,omitempty"`
+}
+
+// GroupSpec is one redundancy group: the connections of one controlling station, or of
+// several that back each other up, of which one has data transfer started at a time.
+type GroupSpec struct {
+	Name string `yaml:"name" json:"name"`
+	// Allow lists the addresses and CIDR prefixes of the group's controlling stations;
+	// empty for any address that no earlier group claimed (a catch-all goes last).
+	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
+}
+
+// The bounds of the redundancy section.
+const (
+	// DefaultEventQueue is the event queue of a group when the model does not set one, the
+	// default of go-iec60870-5.
+	DefaultEventQueue = 1024
+	// MaxEventQueue is the largest event queue a model or --event-queue may ask for.
+	MaxEventQueue = 65536
+	// MaxGroups is the largest number of redundancy groups.
+	MaxGroups = 64
+)
+
+// validate reports the problems of the redundancy section through bad.
+func (r RedundancySpec) validate(bad func(format string, args ...any)) {
+	if r.EventQueue < 0 || r.EventQueue > MaxEventQueue {
+		bad("redundancy.event_queue %d: use 1-%d, or 0 for %d", r.EventQueue, MaxEventQueue, DefaultEventQueue)
+	}
+	if len(r.Groups) > MaxGroups {
+		bad("redundancy.groups: %d groups, use at most %d", len(r.Groups), MaxGroups)
+	}
+	seen := map[string]bool{}
+	for i, g := range r.Groups {
+		what := fmt.Sprintf("redundancy.groups[%d]", i)
+		name := strings.TrimSpace(g.Name)
+		switch {
+		case name == "":
+			bad("%s: a group needs a name", what)
+		case seen[name]:
+			bad("%s: the name %q is already used", what, name)
+		case name != g.Name || strings.ContainsAny(name, "=,"):
+			bad("%s: name %q: no spaces around it, no = or ,", what, g.Name)
+		}
+		seen[name] = true
+		if len(g.Allow) == 0 && i != len(r.Groups)-1 {
+			bad("%s (%s): only the last group may allow every address (no allow)", what, g.Name)
+		}
+		for _, a := range g.Allow {
+			if _, err := ParsePrefix(a); err != nil {
+				bad("%s (%s): allow %q: use an address or a CIDR prefix", what, g.Name, a)
+			}
+		}
+	}
+}
+
+// ParseGroups parses --redundancy-group: entries name=address, name=prefix or name=*, in
+// order. Entries with one name form one group, at the place of its first entry; name=* is a
+// group for every address, which goes last.
+func ParseGroups(entries []string) ([]GroupSpec, error) {
+	var out []GroupSpec
+	at := map[string]int{}
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		name, addr, ok := strings.Cut(e, "=")
+		name, addr = strings.TrimSpace(name), strings.TrimSpace(addr)
+		if !ok || name == "" || addr == "" {
+			return nil, fmt.Errorf("invalid --redundancy-group %q: use name=address, name=prefix or name=* (one address per flag)", e)
+		}
+		i, known := at[name]
+		if !known {
+			i = len(out)
+			at[name] = i
+			out = append(out, GroupSpec{Name: name})
+		}
+		g := &out[i]
+		switch addr {
+		case "*":
+			if known && len(g.Allow) > 0 {
+				return nil, fmt.Errorf("invalid --redundancy-group %q: group %s already lists addresses; * is a group of its own", e, name)
+			}
+			g.Allow = nil
+		default:
+			if known && len(g.Allow) == 0 {
+				return nil, fmt.Errorf("invalid --redundancy-group %q: group %s already takes every address (*)", e, name)
+			}
+			if _, err := ParsePrefix(addr); err != nil {
+				return nil, fmt.Errorf("invalid --redundancy-group %q: %q is neither an address nor a CIDR prefix", e, addr)
+			}
+			g.Allow = append(g.Allow, addr)
+		}
+	}
+	return out, nil
+}
+
+// ParsePrefix parses an address ("10.0.0.5") or a CIDR prefix ("10.0.0.0/24").
+func ParsePrefix(s string) (netip.Prefix, error) {
+	s = strings.TrimSpace(s)
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p.Masked(), nil
+	}
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	return netip.PrefixFrom(addr, addr.BitLen()), nil
 }
 
 // UploadSpec says whether the station takes files.
@@ -413,6 +536,8 @@ func (m *Model) Validate() error {
 	if _, _, total := m.Uploads.limits(); m.Uploads.MaxFileSize > total {
 		bad("uploads.max_file_size %d is larger than uploads.max_total_size %d", m.Uploads.MaxFileSize, total)
 	}
+
+	m.Redundancy.validate(bad)
 
 	if len(problems) == 0 {
 		return nil

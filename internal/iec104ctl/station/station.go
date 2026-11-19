@@ -44,6 +44,9 @@ type Options struct {
 	Metrics iec104.Metrics
 	// Now is the clock of the station; time.Now when nil.
 	Now func() time.Time
+	// Redundancy, when it declares groups or an event queue, replaces the redundancy section
+	// of the model (the flags of `server start`); the zero value keeps the model's.
+	Redundancy RedundancySpec
 	// Security, when not nil, applies the application-layer security of IEC 62351-5:
 	// every controlling station associates with this identity and trust and has these
 	// roles.
@@ -80,12 +83,22 @@ type file struct {
 	at   time.Time
 }
 
+// group is a redundancy group of the station, with its addresses parsed.
+type group struct {
+	name  string
+	allow []netip.Prefix // empty: every address
+}
+
 // Station is a simulated controlled station.
 type Station struct {
 	model *Model
 	opts  Options
 	ca    asdu.CommonAddr
 	srv   *server.Server
+	// groups are the redundancy groups the station declares, nil for none; queue is the
+	// size of the event queue of each group.
+	groups []group
+	queue  int
 
 	mu       sync.Mutex
 	points   map[asdu.IOA]*point
@@ -158,6 +171,32 @@ func New(m *Model, opts Options) (*Station, error) {
 		}
 		st.files[asdu.IOA(spec.IOA)] = &file{ioa: asdu.IOA(spec.IOA), name: spec.Name, data: server.NewFile(data, sectionSize(spec)), at: started}
 	}
+	red := m.Redundancy
+	if len(opts.Redundancy.Groups) > 0 {
+		red.Groups = opts.Redundancy.Groups
+	}
+	if opts.Redundancy.EventQueue != 0 {
+		red.EventQueue = opts.Redundancy.EventQueue
+	}
+	var problems []string
+	red.validate(func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) })
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("redundancy: %s", strings.Join(problems, "; "))
+	}
+	st.queue = red.EventQueue
+	if st.queue == 0 {
+		st.queue = DefaultEventQueue
+	}
+	var groups []server.RedundancyGroup
+	for _, g := range red.Groups {
+		sg := group{name: g.Name}
+		for _, a := range g.Allow {
+			p, _ := ParsePrefix(a) // validated
+			sg.allow = append(sg.allow, p)
+		}
+		st.groups = append(st.groups, sg)
+		groups = append(groups, server.RedundancyGroup{Name: g.Name, Allow: g.Allow})
+	}
 	if dir := m.Uploads.Dir; dir != "" {
 		if err := os.MkdirAll(m.resolve(dir), 0o750); err != nil {
 			return nil, fmt.Errorf("uploads.dir: %w", err)
@@ -190,6 +229,12 @@ func New(m *Model, opts Options) (*Station, error) {
 	}
 	if opts.MaxSessions > 0 {
 		sopts = append(sopts, server.WithMaxSessions(opts.MaxSessions))
+	}
+	sopts = append(sopts, server.WithEventQueue(st.queue))
+	if len(groups) > 0 {
+		// IEC 60870-5-104 clause 10: the connections of a group are redundant; one of them
+		// has data transfer started at a time.
+		sopts = append(sopts, server.WithRedundancyGroups(groups...))
 	}
 	if opts.Metrics != nil {
 		sopts = append(sopts, server.WithMetrics(opts.Metrics))
@@ -237,6 +282,16 @@ func (st *Station) Serve(ln net.Listener) error {
 		ln.Addr(), st.ca, st.name(), len(st.points), len(st.commands), len(st.files))
 	if s := st.opts.Security; s != nil {
 		detail += fmt.Sprintf(", secure (AIS %d)", s.ID)
+	}
+	if len(st.groups) > 0 {
+		names := make([]string, len(st.groups))
+		for i, g := range st.groups {
+			names[i] = g.name
+		}
+		detail += fmt.Sprintf(", redundancy groups %s", strings.Join(names, ", "))
+	}
+	if st.queue != DefaultEventQueue {
+		detail += fmt.Sprintf(", event queue %d", st.queue)
 	}
 	st.event(types.ServerEvent{Event: "listening", Detail: detail})
 	err := st.srv.Serve(ln)
@@ -294,26 +349,50 @@ func remote(s *server.Session) string {
 }
 
 func (st *Station) accept(addr net.Addr) bool {
-	if len(st.opts.Allow) == 0 {
+	if !allows(st.opts.Allow, addr) {
+		st.event(types.ServerEvent{Event: "refused", Remote: addr.String(), Detail: "address not allowed"})
+		return false
+	}
+	if len(st.groups) == 0 {
+		return true
+	}
+	for _, g := range st.groups {
+		if allows(g.allow, addr) {
+			return true
+		}
+	}
+	// The library would close it too; refusing it here puts it in the event log.
+	st.event(types.ServerEvent{Event: "refused", Remote: addr.String(), Detail: "no redundancy group allows the address"})
+	return false
+}
+
+// allows reports whether addr is in one of prefixes; every address is when there are none.
+func allows(prefixes []netip.Prefix, addr net.Addr) bool {
+	if len(prefixes) == 0 {
 		return true
 	}
 	tcp, ok := addr.(*net.TCPAddr)
-	if ok {
-		if ip, ok := netip.AddrFromSlice(tcp.IP); ok {
-			ip = ip.Unmap()
-			for _, p := range st.opts.Allow {
-				if p.Contains(ip) {
-					return true
-				}
-			}
+	if !ok {
+		return false
+	}
+	ip, ok := netip.AddrFromSlice(tcp.IP)
+	if !ok {
+		return false
+	}
+	ip = ip.Unmap()
+	for _, p := range prefixes {
+		if p.Contains(ip) {
+			return true
 		}
 	}
-	st.event(types.ServerEvent{Event: "refused", Remote: addr.String(), Detail: "address not allowed"})
 	return false
 }
 
 func (st *Station) sessionState(s *server.Session, state iec104.State, err error) {
 	e := types.ServerEvent{Remote: remote(s)}
+	if len(st.groups) > 0 && s != nil {
+		e.Group = s.Group()
+	}
 	switch state {
 	case iec104.StateStopped:
 		// The first notification of a session announces it.

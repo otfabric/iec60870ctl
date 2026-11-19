@@ -110,7 +110,15 @@ func build(cfg *config.ServerConfig, log func(types.ServerEvent), trace io.Write
 	if err != nil {
 		return nil, err
 	}
-	opts := Options{Link: link, ASDU: ap, TLS: tc, Allow: allow, MaxSessions: int(cfg.MaxSessions), Log: log, Security: security}
+	groups, err := ParseGroups(cfg.RedundancyGroups)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.EventQueue > MaxEventQueue {
+		return nil, fmt.Errorf("--event-queue %d: use 1-%d, or 0 for the model's", cfg.EventQueue, MaxEventQueue)
+	}
+	opts := Options{Link: link, ASDU: ap, TLS: tc, Allow: allow, MaxSessions: int(cfg.MaxSessions), Log: log, Security: security,
+		Redundancy: RedundancySpec{Groups: groups, EventQueue: int(cfg.EventQueue)}}
 	if cfg.Debug && trace != nil {
 		opts.Metrics = &iec.Tracer{W: trace, Params: ap}
 	}

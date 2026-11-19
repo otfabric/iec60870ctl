@@ -134,7 +134,8 @@ They combine well: use iec104ctl to drive and check a station from the command l
 | Files            | File transfer of IEC 60870-5-101/104: list the directory, fetch a file, deliver a file, with checksums verified.          |
 | Types            | List the type identifications iec104ctl knows, with direction and description.                                            |
 | Discover         | Find IEC 104 stations on subnets with a non-intrusive probe (one test frame; data transfer is not started).               |
-| Server           | A simulated controlled station from a YAML or JSON model: interrogations, read, counters, commands with select-before-operate, clock, reset, files and uploads, simulated values, queued events, redundant connections, TLS, IEC 62351-5 security with roles, allow-list. |
+| Server           | A simulated controlled station from a YAML or JSON model: interrogations, read, counters, commands with select-before-operate, clock, reset, files and uploads, simulated values, queued events, redundancy groups with a sized event queue, TLS, IEC 62351-5 security with roles, allow-list. |
+| Redundancy       | **`--standby-url`**: the client connects over several paths to one station as a redundancy group of IEC 60870-5-104 clause 10; `client monitor` follows a switchover. See [Redundant connections](#redundant-connections). |
 | Transports       | TCP, and TLS (IEC 62351-3) with server verification and client certificates, selected with **`--url`**. See [Connecting to a station](#connecting-to-a-station). |
 | Security         | The application-layer security of IEC 62351-5 (A-Profile of IEC TS 60870-5-7) on every client command and on the simulated station: **`--secure`**, certificates trusted by authority or pinned, HMAC-SHA-256 or AES-256-GCM, role-based access control at the station. See [Connecting to a station](#connecting-to-a-station). |
 | Protocol parameters | `k`, `w`, `t0`-`t3`, originator address, and the ASDU field sizes of IEC 60870-5-101 gateways (cause, common address, object address). |
@@ -257,6 +258,23 @@ Every `iec104ctl client` command takes the station as a URL, or as an address an
 | `--ip host [--port n]` | TCP on port 2404 or `n`; TLS when a `--tls…` flag is given |
 
 `--ca` is the common address of the station (default 1). `--timeout` bounds connecting and each request in milliseconds (default 10000); a large station may need more for its general interrogation. `--originator` sets the originator address sent with every request.
+
+**Redundant connections**
+
+`--standby-url` names a further path to the same station: a second network, or a redundant front end. Give it once per URL (up to 8), or as a comma-separated list. The station URL (`--url`, or `--ip` with `--port`) and the standby URLs then form a **redundancy group** in the sense of IEC 60870-5-104 clause 10 (redundant connections): every connection is established, data transfer is started on one of them, and the others stay in STOPDT, supervised with test frames. When the connection with data transfer started is lost, a standby takes over (go-iec60870-5 `client.Group`).
+
+```console
+# Two front ends of one station
+iec104ctl client interrogate --url tcp://10.0.0.5 --standby-url tcp://10.1.0.5
+
+# Monitor across both paths; a switchover is reported on stderr and the stream goes on
+iec104ctl client monitor --url tcp://10.0.0.5 --standby-url tcp://10.1.0.5 --interrogate
+```
+
+- Data transfer starts on the first connection that is established, which is not always the station URL. The `target` of a result is the connection the command ran on.
+- A one-shot command runs on that one connection. A request is never sent again on another connection when its connection is lost: the command then fails as without `--standby-url`.
+- Every standby URL has the scheme of the station (`tcp://` or `tls://`); the TLS flags and `--secure` apply to every connection, which share one association of IEC 62351-5. An address given twice, another scheme or more than 8 URLs exit with code 3 before anything is sent.
+- `client monitor` writes `monitor: switchover: data transfer on <url>` and counts the switchovers in its summary; `--interrogate` interrogates every connection that takes over. With `--no-reconnect` it ends with code 4 when no connection of the group is left, not when the first one is lost.
 
 **TLS**
 
@@ -430,7 +448,8 @@ The first column is when the value **arrived**; the time after `@` is the **time
 | `--type`, `--ioa` | Only these types and addresses. Note that an event has the time-tagged type (`M_SP_TB_1`), an interrogated value the plain one (`M_SP_NA_1`) |
 | `--count`, `--duration` | Stop after that many values, or seconds |
 | `--all` | Also show confirmations and terminations of commands, and file transfer |
-| `--no-reconnect` | Exit with code 4 when the connection is lost, instead of reconnecting |
+| `--no-reconnect` | Exit with code 4 when the connection is lost, instead of reconnecting; with `--standby-url`, when no connection of the redundancy group is left |
+| `--standby-url` | Further paths to the station: a redundancy group, see [Redundant connections](#redundant-connections) |
 
 A station sends its events on **one** connection, usually the one that started data transfer last. While you monitor, the regular controlling station may not receive them. Stations with several redundancy groups keep a queue per group; ask before you monitor a station in service.
 
@@ -668,6 +687,7 @@ What it does:
 - **Changes values by itself** where the model says `simulate` (`toggle`, `ramp`, `sine`, `random`, `count`), and reports the changes as spontaneous events with a time tag. `cyclic_interval` sends the measured values periodically.
 - **Queues events** of state changes and commands while no controlling station is connected and delivers them to the next one, as an RTU does.
 - **Serves up to 16 connections** (`--max-sessions`; 0 = no limit), of which one receives the events (redundancy). A further connection is closed at once.
+- **Redundancy groups** (`--redundancy-group`, or `redundancy.groups` in the model): the connections of one controlling station, or of several that back each other up, of which one has data transfer started at a time (IEC 60870-5-104 clause 10). A STARTDT on another connection of the group takes over, and the connection that was started is closed. Each group has its own event queue of `--event-queue` events (1024 by default); when it is full the oldest event is dropped. A connection no group allows is refused (`refused`, "no redundancy group allows the address"), and the connection events carry the group.
 - **Serves files** and, with `uploads.accept`, takes them. The built-in demo station takes none.
 
 Every event is written to stdout as it happens:
@@ -695,6 +715,8 @@ With `--secure` the station also logs `secured` when a controlling station has a
 | `--roles` | The roles every controlling station has: `viewer`, `operator`, `engineer`, `installer`, `secadm`, `secaud`, `rbacmnt`. A request no role permits is refused with cause 17. Without it there is no access control |
 | `--allow` | Only accept clients from these addresses or CIDR prefixes |
 | `--max-sessions` | Maximum number of simultaneous connections; a further one is closed at once. 16 by default, 0 = no limit |
+| `--redundancy-group` | A redundancy group: `name=address`, `name=prefix` or `name=*` (every other address). Repeat it for every address and group, in order: `--redundancy-group scada=10.0.0.5 --redundancy-group scada=10.1.0.5 --redundancy-group rest=*`. A connection belongs to the first group that allows it. It replaces the groups of the model |
+| `--event-queue` | Events each redundancy group buffers while none of its connections has data transfer started, and until they are acknowledged; when it is full the oldest is dropped. 0 = the model's, else 1024; at most 65536 |
 | `--duration` | Stop after this many seconds, for use in test pipelines |
 | `--k`, `--w`, `--t0` … `--t3`, `--cot-size`, `--ca-size`, `--ioa-size`, `--timezone` | As for the client |
 
@@ -742,6 +764,7 @@ iec104ctl client read --ioa 1000
 | **IEC104CTL_DPA** | string | Data protection algorithm of IEC 62351-5, by code or name (needs `--secure`) | `--dpa` | `--mal` |
 | **IEC104CTL_DURATION** | uint32 | **`client monitor`**, **`server start`**: stop after this many seconds (0 = until interrupted) | `--duration` | 0 |
 | **IEC104CTL_END** | uint16 | **`client scan`**: last common address of a sweep | `--end` | 255 |
+| **IEC104CTL_EVENT_QUEUE** | uint32 | **`server start`**: events each redundancy group buffers (0 = the model's, else 1024) | `--event-queue` | 0 |
 | **IEC104CTL_FILE_IOA** | uint32 | **`client file list`**: the directory (0 = the station's default); **`get`**, **`put`**: the file (`--ioa` is required on the command line) | `--ioa` | 0 |
 | **IEC104CTL_FILE_NAME** | uint16 | **`client file get`**, **`put`**: name of file (NOF) | `--name` | 1 |
 | **IEC104CTL_FORCE** | bool | **`server generate-config`**: overwrite an existing file | `--force` | false |
@@ -766,6 +789,7 @@ iec104ctl client read --ioa 1000
 | **IEC104CTL_PORT** | uint16 | Station TCP port; **`server start`**: port to listen on (0 = 2404, or 19998 with TLS) | `--port` | 2404 |
 | **IEC104CTL_PORTS** | list | **`discover`**: TCP ports to probe | `--ports` | 2404 |
 | **IEC104CTL_QUALIFIER** | string | **`client command`**: none, short, long, persistent, or a number | `--qualifier` | none |
+| **IEC104CTL_REDUNDANCY_GROUP** | list | **`server start`**: redundancy groups, `name=address`, `name=prefix` or `name=*` | `--redundancy-group` | |
 | **IEC104CTL_RESET_QUALIFIER** | string | **`client reset`**: process or events (the flag is required) | `--qualifier` | |
 | **IEC104CTL_ROLES** | list | **`server start`**: roles of every controlling station (needs `--secure`) | `--roles` | no access control |
 | **IEC104CTL_SCAN_METHOD** | string | **`client scan`**: broadcast or sweep | `--method` | broadcast |
@@ -774,6 +798,7 @@ iec104ctl client read --ioa 1000
 | **IEC104CTL_SECURITY_CERT** | string | PEM file with the own station certificate of IEC 62351-5 | `--security-cert` | |
 | **IEC104CTL_SECURITY_KEY** | string | PEM file with the private key of `--security-cert` | `--security-key` | |
 | **IEC104CTL_SECURITY_TRUST** | string | PEM file with the trusted authorities and pinned station certificates | `--security-trust` | |
+| **IEC104CTL_STANDBY_URL** | list | Further URLs of the station: a redundancy group of the client | `--standby-url` | |
 | **IEC104CTL_START** | uint16 | **`client scan`**: first common address of a sweep | `--start` | 1 |
 | **IEC104CTL_SUBNETS** | list | **`discover`**: subnets, ranges or addresses to probe | `--subnets` | |
 | **IEC104CTL_T0** | uint16 | t0: connection establishment timeout in seconds (0 = 30) | `--t0` | 0 |

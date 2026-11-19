@@ -547,7 +547,10 @@ type ServerEvent struct {
 	// NonFinite names a value JSON has no number for, "NaN", "+Inf" or "-Inf", in place of
 	// Value (a set point that is not a finite number). Omitted for every other value.
 	NonFinite string `json:"non_finite,omitempty"`
-	Detail    string `json:"detail,omitempty"`
+	// Group is the redundancy group of the connection, on the connection events, when the
+	// station declares redundancy groups. Omitted otherwise.
+	Group  string `json:"group,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // valueText is the value of the event for text and table output, "" when it has none.
