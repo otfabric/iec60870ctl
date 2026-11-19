@@ -32,6 +32,12 @@ files:
 uploads:
   accept: true
   dir: ./uploads
+
+redundancy:                    # optional
+  event_queue: 4096
+  groups:
+    - {name: scada, allow: [10.0.0.5, 10.1.0.5]}
+    - {name: rest}
 ```
 
 Information object addresses are unique across points, commands and files: 1 to 16 777 215.
@@ -145,6 +151,19 @@ A delivered file appears in the directory and can be fetched back. A file delive
 
 While a file is being delivered, what has arrived of it is held in memory. A connection has at most 16 transfers open at once (go-iec60870-5), and `server start` serves at most 16 connections at once unless `--max-sessions` says otherwise (0 = no limit).
 
+## `redundancy`
+
+The redundancy groups of the station (IEC 60870-5-104 clause 10, redundant connections) and their event queue. `--redundancy-group` and `--event-queue` of `server start` replace what the model says.
+
+| Field | Meaning |
+|-------|---------|
+| `event_queue` | Events each group buffers: queued while none of its connections has data transfer started, and kept until the controlling station acknowledges them. When the queue is full the oldest event is dropped. 1-65536, default 1024 |
+| `groups` | Up to 64 groups, each `name` (unique; no `=` or `,`) and `allow`, the addresses and CIDR prefixes of its controlling stations. A group without `allow` takes every address no earlier group claimed, and must come last |
+
+A connection belongs to the first group that allows its address; one that no group allows is refused before any protocol exchange, with a `refused` event. Of the connections of a group one has data transfer started: a STARTDT on another one takes over, and the connection that was started is closed so that nothing more is sent on it (that close is how go-iec60870-5 keeps one connection started, not a requirement of clause 10). The others stay up in STOPDT, as standbys. The events of a group go to its started connection; what it did not acknowledge is sent again on the next one, so a controlling station may see an event twice across a switchover but does not miss one. The connection events (`connected`, `started`, `stopped`, `disconnected`) carry the `group`.
+
+Without groups there is one queue for every connection, and the connections are independent: none is closed because another one started.
+
 ## What the station answers
 
 | Request | Answer |
@@ -159,4 +178,4 @@ While a file is being delivered, what has arrived of it is held in memory. A con
 | File transfer (`F_SC_NA_1` …) | serves `files`, lists the directory, takes uploads |
 | Anything else | "unknown type identification" |
 
-The station serves any number of connections. Queued events go to one of them, the one that started data transfer last, and what a connection did not acknowledge goes to the next: the redundancy of IEC 60870-5-104.
+The station serves up to `--max-sessions` connections. Without `redundancy.groups`, queued events go to one of them, the one that started data transfer last, and what a connection did not acknowledge goes to the next. With groups, each group has its own queue and its own started connection: see [`redundancy`](#redundancy).

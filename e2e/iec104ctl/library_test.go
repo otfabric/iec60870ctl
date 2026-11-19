@@ -267,6 +267,22 @@ func TestServerAgainstLibraryClient(t *testing.T) {
 	_ = cmd.Wait()
 }
 
+// --standby-url against go-iec60870-5's own station: with the station URL down, the
+// standby of the redundancy group carries the command, and the result names it.
+func TestStandbyURLAgainstLibraryServer(t *testing.T) {
+	st := startLibStation(t)
+	down := "tcp://127.0.0.1:" + freePort(t)
+	out, code := stdoutOf(t, "client", "interrogate", "--url", down, "--standby-url", "tcp://"+st.addr,
+		"--ca", "7", "--format", "json", "--timeout", "5000")
+	var res struct {
+		Target string `json:"target"`
+		Count  int    `json:"count"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &res) != nil || res.Target != "tcp://"+st.addr || res.Count != 2 {
+		t.Fatalf("interrogate over the standby: exit %d\n%s", code, out)
+	}
+}
+
 func freePort(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

@@ -113,3 +113,45 @@ func (c *ConnConfig) ResolveTarget() (Target, error) {
 		return Target{}, fmt.Errorf("no station given: set --url (tcp://host:port or tls://host:port) or --ip")
 	}
 }
+
+// MaxStandby is the largest number of --standby-url.
+const MaxStandby = 8
+
+// ResolveStandby returns the further connections of the redundancy group of --standby-url,
+// for the station primary that [ConnConfig.ResolveTarget] returned. Every one uses the
+// transport of primary (the TLS flags apply to all of them), and no address is given twice.
+// Without --standby-url it returns none.
+func (c *ConnConfig) ResolveStandby(primary Target) ([]Target, error) {
+	var out []Target
+	seen := map[string]bool{primary.Addr(): true}
+	for _, raw := range c.Standby {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		t, err := ParseURL(raw)
+		if err != nil {
+			return nil, fmt.Errorf("--standby-url: %w", err)
+		}
+		if t.TLS != primary.TLS {
+			return nil, fmt.Errorf("--standby-url %s: the connections of a redundancy group use the transport of the station %s; give a %s URL",
+				raw, primary, scheme(primary.TLS))
+		}
+		if seen[t.Addr()] {
+			return nil, fmt.Errorf("--standby-url %s: the address %s is already a connection of the group", raw, t.Addr())
+		}
+		seen[t.Addr()] = true
+		out = append(out, t)
+	}
+	if len(out) > MaxStandby {
+		return nil, fmt.Errorf("--standby-url: %d URLs, use at most %d", len(out), MaxStandby)
+	}
+	return out, nil
+}
+
+func scheme(tls bool) string {
+	if tls {
+		return SchemeTLS + "://"
+	}
+	return SchemeTCP + "://"
+}
