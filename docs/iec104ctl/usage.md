@@ -128,6 +128,7 @@ They combine well: use iec104ctl to drive and check a station from the command l
 | Command          | Single, double, regulating step, set point (normalized, scaled, short floating point) and bitstring commands; direct execute, select, select-before-operate and cancel; qualifier of command; optional CP56Time2a time tag; optional wait for the activation termination. |
 | Clock            | Clock synchronization (`C_CS_NA_1`) with the current or a given time, in the time zone of the station.                    |
 | Reset            | Reset process command (`C_RP_NA_1`): general reset of the process, or reset of pending events.                            |
+| Parameter        | Parameter of measured value (`P_ME_NA_1`, `P_ME_NB_1`, `P_ME_NC_1`: threshold, smoothing factor, transmission limits) and parameter activation (`P_AC_NA_1`), confirmed by the station. |
 | Ping             | Link test frames (TESTFR act/con) or test commands (`C_TS_TA_1`) at an interval, with round-trip times.                   |
 | Scan             | Find the common addresses behind one connection: one interrogation to the broadcast address, or a sweep of a range.       |
 | Files            | File transfer of IEC 60870-5-101/104: list the directory, fetch a file, deliver a file, with checksums verified.          |
@@ -154,6 +155,7 @@ iec104ctl
 │   ├── command          Process command: single, double, step, set point, bitstring (execute | select | sbo | cancel)
 │   ├── clock            Clock synchronization (C_CS_NA_1)
 │   ├── reset            Reset process command (C_RP_NA_1)
+│   ├── parameter        Load a parameter of a measured value, or activate parameters (P_ME_NA/NB/NC_1, P_AC_NA_1)
 │   ├── ping             Test frames (TESTFR) or test commands (C_TS_TA_1) with round-trip time
 │   ├── scan             Find the stations (common addresses) behind a connection
 │   ├── file
@@ -205,6 +207,7 @@ iec104ctl client monitor
 iec104ctl client command
 iec104ctl client clock
 iec104ctl client reset
+iec104ctl client parameter
 iec104ctl client ping
 iec104ctl client scan
 iec104ctl client file list
@@ -505,6 +508,23 @@ iec104ctl client reset --ip 192.168.1.10 --qualifier process
 
 Both change the station and are sent once. `client reset` has no default for `--qualifier`: a process reset restarts the station's application, and it may drop its connections.
 
+#### Parameters of measured values
+
+```console
+# Threshold of the measured value at IOA 3001: report changes of 0.5 and more
+iec104ctl client parameter --ip 192.168.1.10 --type float --ioa 3001 --value 0.5 --qualifier threshold
+
+# High limit of a scaled measured value, then activate the parameter of that object
+iec104ctl client parameter --ip 192.168.1.10 --type scaled --ioa 3002 --value 1200 --qualifier high-limit
+iec104ctl client parameter --ip 192.168.1.10 --type activation --ioa 3002 --qualifier object
+```
+
+```console
+Parameter threshold = 0.5 (P_ME_NC_1) of IOA 3001 at station 1 of tcp://192.168.1.10:2404 confirmed in 1.9 ms
+```
+
+`--type` is `normalized` (`P_ME_NA_1`, a value from -1 to just under 1), `scaled` (`P_ME_NB_1`, -32768 to 32767), `float` (`P_ME_NC_1`) or `activation` (`P_AC_NA_1`, no `--value`), or the type name. `--qualifier` is the kind of parameter, `threshold`, `smoothing`, `low-limit` or `high-limit`, or for an activation what it activates: `loaded` (the parameters loaded before, at `--ioa 0`), `object` (the parameter of the object at `--ioa`) or `cyclic` (persistent cyclic or periodic transmission of the object at `--ioa`) (IEC 60870-5-104:2000 7.9; IEC 60870-5-101:2003 7.2.6.24, 7.2.6.25, 7.4.9, 7.4.10). The parameter is sent once and waits for the activation confirmation; a refusal exits **6**. `--type`, `--ioa`, `--value` and `--qualifier` are taken only from the command line: they have no environment variable.
+
 #### Test the link
 
 ```console
@@ -561,6 +581,8 @@ iec104ctl client scan --ip 192.168.1.10
 # The same by trying addresses 1-50, for stations that ignore the broadcast address
 iec104ctl client scan --ip 192.168.1.10 --method sweep --start 1 --end 50 --timeout 1000
 ```
+
+`--method ca`, the name iec101ctl gives the sweep, is accepted for `sweep`; the result reports `sweep`.
 
 ```console
 Scan of tcp://192.168.1.10:2404 (broadcast): 1 stations found, 1 common addresses probed, 1528 ms
@@ -641,7 +663,7 @@ uploads:
 
 What it does:
 
-- **Answers** general, group and counter interrogations, read commands, clock synchronization, the test command and the reset process command.
+- **Answers** general, group and counter interrogations, read commands, clock synchronization, the test command, the reset process command and parameters. A reset of pending events removes the queued events that carry a time tag (IEC 60870-5-101:2003 7.2.6.27). A parameter of measured value to a measured value of the model, and a parameter activation, are confirmed and reported as a `parameter` event; the station keeps no parameters and does not apply them.
 - **Executes commands** on the points named as their `target`, direct or select-before-operate, and reports the change as an event with cause "return information caused by a remote command". `select_required` refuses an execute without a select.
 - **Changes values by itself** where the model says `simulate` (`toggle`, `ramp`, `sine`, `random`, `count`), and reports the changes as spontaneous events with a time tag. `cyclic_interval` sends the measured values periodically.
 - **Queues events** of state changes and commands while no controlling station is connected and delivers them to the next one, as an RTU does.

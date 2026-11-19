@@ -171,6 +171,7 @@ func New(m *Model, opts Options) (*Station, error) {
 	mux.HandleFunc(asdu.C_CS_NA_1, st.clockSync)
 	mux.HandleFunc(asdu.C_TS_TA_1, st.testCommand)
 	mux.HandleFunc(asdu.C_RP_NA_1, st.resetProcess)
+	mux.Handle(server.HandlerFunc(st.parameter), asdu.P_ME_NA_1, asdu.P_ME_NB_1, asdu.P_ME_NC_1, asdu.P_AC_NA_1)
 	mux.Handle(server.HandlerFunc(st.command), server.ProcessCommands...)
 	fs := server.NewFileServer(server.FileSourceFunc(st.openFile))
 	fs.Directory = st.directory
@@ -558,6 +559,11 @@ func (st *Station) resetProcess(s *server.Session, req *asdu.ASDU) {
 		return
 	}
 	detail := "pending events"
+	if q == asdu.ResetPendingEvents {
+		// The events with a time tag that no controlling station has been sent yet go
+		// (IEC 60870-5-101:2003 7.2.6.27, QRP 2); one sent and not yet acknowledged stays.
+		detail = fmt.Sprintf("pending events: %d with time tag cleared", st.clearPendingEvents())
+	}
 	if q == asdu.ResetProcessGeneral {
 		// The values are back before the confirmation: whoever acts on it sees them.
 		detail = "process: values back to the model"
@@ -573,6 +579,108 @@ func (st *Station) resetProcess(s *server.Session, req *asdu.ASDU) {
 		_ = st.srv.Enqueue(asdu.New(asdu.CauseInitialized, st.ca, asdu.EndOfInitialization{Cause: asdu.InitRemoteReset}))
 	}
 	st.event(types.ServerEvent{Event: "reset", Remote: remote(s), CommonAddr: uint16(st.ca), Detail: detail})
+}
+
+// clearPendingEvents removes the queued events with a time tag that no controlling station
+// has been sent, in every redundancy group, and returns how many (QRP 2). The events without
+// a time tag, and those sent and not yet acknowledged, stay.
+func (st *Station) clearPendingEvents() int { return st.srv.ClearEvents("", true) }
+
+// parameter loads a parameter of measured value or activates parameters (IEC
+// 60870-5-104:2000 7.9; IEC 60870-5-101:2003 7.4.9, 7.4.10). The station takes a parameter
+// of measured value for any measured value of its model, whatever its representation, and
+// confirms it; it keeps no parameter and does not apply it to the simulation. The
+// previously loaded parameters are activated at address 0, the parameter or the cyclic
+// transmission of an object at the address of a point. Anything else is refused.
+func (st *Station) parameter(s *server.Session, req *asdu.ASDU) {
+	req = st.own(req)
+	obj := req.First()
+	ioa := obj.Address()
+	e := types.ServerEvent{Event: "parameter", Remote: remote(s), CommonAddr: uint16(st.ca), IOA: uint32(ioa), Type: req.Type.String()}
+	refuse := func(why string, reject asdu.Cause) {
+		if reject != 0 {
+			_ = s.Reject(req, reject)
+		} else {
+			_ = s.Negative(req)
+		}
+		e.Detail = "refused: " + why
+		st.event(e)
+	}
+	if req.Cause != asdu.CauseActivation {
+		refuse("only activation", 0)
+		return
+	}
+	st.mu.Lock()
+	p := st.points[ioa]
+	st.mu.Unlock()
+
+	if a, ok := obj.(asdu.ParameterActivation); ok {
+		switch {
+		case a.Qualifier == asdu.ActivateLoadedParameters && ioa == 0:
+			e.Detail = "activated: loaded parameters"
+		case (a.Qualifier == asdu.ActivateObjectParameter || a.Qualifier == asdu.ActivateCyclic) && p != nil:
+			e.Detail = "activated: object parameter"
+			if a.Qualifier == asdu.ActivateCyclic {
+				e.Detail = "activated: cyclic transmission"
+			}
+		case a.Qualifier < asdu.ActivateLoadedParameters || a.Qualifier > asdu.ActivateCyclic:
+			refuse(fmt.Sprintf("qualifier of parameter activation %d", a.Qualifier), 0)
+			return
+		case ioa == 0:
+			refuse("the object is required", asdu.CauseUnknownIOA)
+			return
+		case p == nil:
+			refuse("unknown information object address", asdu.CauseUnknownIOA)
+			return
+		default:
+			refuse("the loaded parameters are activated at address 0", 0)
+			return
+		}
+		_ = s.Confirm(req)
+		st.event(e)
+		return
+	}
+
+	if p == nil {
+		refuse("unknown information object address", asdu.CauseUnknownIOA)
+		return
+	}
+	if !strings.HasPrefix(p.typ.String(), "M_ME_") {
+		refuse(fmt.Sprintf("the object is %s, not a measured value", p.typ), 0)
+		return
+	}
+	var v any
+	var q uint8
+	switch o := obj.(type) {
+	case asdu.ParameterNormalized:
+		v, q = o.Value.Float64(), o.Qualifier
+	case asdu.ParameterScaled:
+		v, q = int(o.Value), o.Qualifier
+	case asdu.ParameterFloat:
+		v, q = o.Value, o.Qualifier
+	}
+	e.Value, e.NonFinite = format.Finite(v)
+	kind, ok := parameterKinds[q&0x3f]
+	if !ok {
+		refuse(fmt.Sprintf("kind of parameter %d", q&0x3f), 0)
+		return
+	}
+	if e.NonFinite != "" {
+		refuse("the value is not a finite number", 0)
+		return
+	}
+	e.Detail = "loaded: " + kind
+	_ = s.Confirm(req)
+	st.event(e)
+}
+
+// parameterKinds names the kinds of parameter of measured value (KPA,
+// IEC 60870-5-101:2003 7.2.6.24).
+var parameterKinds = map[uint8]string{
+	asdu.ParameterThreshold: "threshold",
+	asdu.ParameterSmoothing: "smoothing",
+	asdu.ParameterLowLimit:  "low-limit",
+	asdu.ParameterHighLimit: "high-limit",
 }
 
 // tag returns the time tag of an event of p: the station's time, or none.

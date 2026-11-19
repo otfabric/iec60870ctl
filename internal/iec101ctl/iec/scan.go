@@ -32,7 +32,7 @@ const (
 func ScanMethods() map[string]string {
 	return map[string]string{
 		ScanBroadcast: "one general interrogation to the broadcast common address",
-		ScanCA:        "one general interrogation per common address",
+		ScanCA:        "one general interrogation per common address (also: sweep)",
 		ScanLink:      "request status of link per link address (unbalanced)",
 	}
 }
@@ -41,8 +41,22 @@ func ScanMethods() map[string]string {
 // that every station has finished. Tests shorten it.
 var ScanQuiet = 1500 * time.Millisecond
 
+// scanAliases maps the other tool's name of a scan method to this one's: one general
+// interrogation per common address is "sweep" in iec104ctl and "ca" in iec101ctl, and
+// both tools take both names.
+var scanAliases = map[string]string{"sweep": ScanCA}
+
+// scanMethod returns the name of method that this tool reports.
+func scanMethod(method string) string {
+	if m, ok := scanAliases[method]; ok {
+		return m
+	}
+	return method
+}
+
 // CheckScan validates the configuration of `client scan`.
 func CheckScan(cfg *config.ScanConfig) error {
+	cfg.Method = scanMethod(cfg.Method)
 	if err := Validate(&cfg.ConnConfig); err != nil {
 		return err
 	}
@@ -94,6 +108,7 @@ func (t *tally) station(ca asdu.CommonAddr) types.ScanStation {
 // Scan finds the stations on one line: by common address (broadcast or sweep) or by link
 // address. progress receives a line per station found during a sweep.
 func Scan(ctx context.Context, cfg *config.ScanConfig, trace, progress io.Writer) (any, error) {
+	cfg.Method = scanMethod(cfg.Method)
 	switch cfg.Method {
 	case ScanCA:
 		return scanCA(ctx, cfg, trace, progress)

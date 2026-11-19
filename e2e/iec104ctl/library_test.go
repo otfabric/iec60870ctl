@@ -36,12 +36,14 @@ func binary(t *testing.T) string {
 
 // libStation is a controlled station built on go-iec60870-5's iec104/server alone: it
 // answers a general interrogation with two points, a read of either, a clock
-// synchronization, a test command and single commands on IOA 6001, which it records.
+// synchronization, a test command, single commands on IOA 6001 and parameters of the
+// measured value at IOA 4001 (P_ME_NC_1), which it records.
 type libStation struct {
-	srv  *server.Server
-	addr string
-	mu   sync.Mutex
-	cmds []asdu.SingleCommand
+	srv    *server.Server
+	addr   string
+	mu     sync.Mutex
+	cmds   []asdu.SingleCommand
+	params []asdu.ParameterFloat
 }
 
 func startLibStation(t *testing.T) *libStation {
@@ -85,6 +87,17 @@ func startLibStation(t *testing.T) *libStation {
 		_ = s.Confirm(req)
 		_ = s.Terminate(req)
 	})
+	mux.HandleFunc(asdu.P_ME_NC_1, func(s *server.Session, req *asdu.ASDU) {
+		p := req.First().(asdu.ParameterFloat)
+		if p.IOA != 4001 {
+			_ = s.Reject(req, asdu.CauseUnknownIOA)
+			return
+		}
+		st.mu.Lock()
+		st.params = append(st.params, p)
+		st.mu.Unlock()
+		_ = s.Confirm(req)
+	})
 	srv, err := server.New(mux, server.WithCommonAddrs(ca))
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +110,12 @@ func startLibStation(t *testing.T) *libStation {
 	t.Cleanup(func() { _ = srv.Close() })
 	st.srv, st.addr = srv, ln.Addr().String()
 	return st
+}
+
+func (st *libStation) parameters() []asdu.ParameterFloat {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return append([]asdu.ParameterFloat(nil), st.params...)
 }
 
 func (st *libStation) commands() []asdu.SingleCommand {
@@ -164,6 +183,27 @@ func TestClientAgainstLibraryServer(t *testing.T) {
 	}
 	if cmds := st.commands(); len(cmds) != 1 || !cmds[0].Value {
 		t.Errorf("the station saw %+v, want one single command on", cmds)
+	}
+
+	out, code = stdoutOf(t, base("parameter", "--type", "float", "--ioa", "4001", "--value", "0.5", "--qualifier", "threshold")...)
+	if code != 0 || !strings.Contains(out, `"P_ME_NC_1"`) {
+		t.Fatalf("parameter: exit %d\n%s", code, out)
+	}
+	if out, code = stdoutOf(t, base("parameter", "--type", "float", "--ioa", "4002", "--value", "0.5", "--qualifier", "threshold")...); code != 6 {
+		t.Errorf("parameter to an unknown address: exit %d\n%s", code, out)
+	}
+	// IEC 60870-5-101:2003 7.2.6.24: KPA 1 is the threshold value.
+	if ps := st.parameters(); len(ps) != 1 || ps[0].Value != 0.5 || ps[0].Qualifier&0x3f != 1 {
+		t.Errorf("the station saw %+v, want one threshold of 0.5", ps)
+	}
+
+	// A usage error found before the command runs is JSON too, with --format json.
+	out, code = stdoutOf(t, base("read")...)
+	var fatal struct {
+		Error struct{ Kind, Code string } `json:"error"`
+	}
+	if code != 2 || json.Unmarshal([]byte(out), &fatal) != nil || fatal.Error.Kind != "usage" {
+		t.Errorf("read without --ioa: exit %d\n%s", code, out)
 	}
 }
 

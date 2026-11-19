@@ -174,6 +174,17 @@ type ResetConfig struct {
 	OutputFormat string `env:"IEC104CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 
+// ParameterConfig drives `client parameter`. What it changes at the station is taken only
+// from the command line: none of its own flags has an environment variable.
+type ParameterConfig struct {
+	StationConfig
+	Type         string `desc:"Parameter type: normalized (P_ME_NA_1), scaled (P_ME_NB_1), float (P_ME_NC_1) or activation (P_AC_NA_1), or the type name" flag:"type"`
+	IOA          uint32 `desc:"Information object address: the measured value the parameter belongs to (0 for an activation of the previously loaded parameters)" flag:"ioa"`
+	Value        string `desc:"Value of a parameter of measured value: -1 up to 1 (normalized), -32768 to 32767 (scaled) or a number (float); none for an activation" flag:"value"`
+	Qualifier    string `desc:"Kind of parameter of measured value: threshold, smoothing, low-limit or high-limit; for an activation: loaded, object or cyclic" flag:"qualifier"`
+	OutputFormat string `env:"IEC104CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
+}
+
 // PingConfig drives `client ping`.
 type PingConfig struct {
 	StationConfig

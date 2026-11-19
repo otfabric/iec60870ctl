@@ -367,6 +367,13 @@ func TestScanAndTypes(t *testing.T) {
 	cli(t, st, "scan", "--method", "sweep", "--start", "3", "--end", "4", "--format", "table").want(t, 0).has(t, "CA  STATUS")
 	cli(t, st, "scan", "--method", "sweep", "--start", "9", "--end", "2").want(t, 3)
 	cli(t, st, "scan", "--method", "guess").want(t, 3)
+	// "ca", the name iec101ctl uses for this method, is accepted as an alias.
+	var alias types.ScanResult
+	cli(t, st, "scan", "--method", "ca", "--start", "1", "--end", "1", "--delay", "1", "--format", "json").want(t, 0).decode(t, &alias)
+	if alias.Method != "sweep" || alias.Found != 1 {
+		t.Fatalf("scan --method ca: %+v", alias)
+	}
+	cli(t, st, "scan", "--method", "ca", "--start", "9", "--end", "2").want(t, 3)
 
 	var tr types.TypesResult
 	run(t, "client", "types", "--format", "json").want(t, 0).decode(t, &tr)

@@ -100,7 +100,7 @@ func Execute() int {
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	root, err := buildRoot()
 	if err != nil {
-		return runner.RenderFatal(nil, err, stdout, stderr, false)
+		return runner.RenderFatal(runner.FormatFallback(nil, args, "IEC102CTL_FORMAT"), err, stdout, stderr, false)
 	}
 	root.SetArgs(args)
 	root.SetOut(stdout)
@@ -111,7 +111,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	err = root.ExecuteContext(ctx)
 	debug, _ := root.PersistentFlags().GetBool("debug")
 	if err != nil {
-		return runner.RenderFatal(inv, usageError(err), stdout, stderr, debug)
+		return runner.RenderFatal(runner.FormatFallback(inv, args, "IEC102CTL_FORMAT"), usageError(err), stdout, stderr, debug)
 	}
 	if inv.SuccessExitSet {
 		return inv.SuccessExitCode

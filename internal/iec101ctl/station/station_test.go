@@ -271,8 +271,25 @@ func TestStationServices(t *testing.T) {
 			}
 			send(asdu.New(asdu.CauseActivation, 5, asdu.TestCommand{Time: asdu.Now()}))
 			r.expect(t, asdu.C_TS_TA_1, asdu.CauseUnknownType)
-			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 1, Qualifier: 1}))
-			r.expect(t, asdu.P_AC_NA_1, asdu.CauseUnknownType)
+			// The previously loaded parameters are activated at address 0 (IEC 60870-5-101:2003
+			// 7.2.6.25): at the address of a point the activation is refused, at an unknown
+			// address it is refused as such.
+			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 100, Qualifier: asdu.ActivateLoadedParameters}))
+			if a := r.expect(t, asdu.P_AC_NA_1, asdu.CauseActivationCon); !a.Negative {
+				t.Errorf("activation of the loaded parameters at address 100 confirmed: %v", a)
+			}
+			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 1, Qualifier: asdu.ActivateLoadedParameters}))
+			r.expect(t, asdu.P_AC_NA_1, asdu.CauseUnknownIOA)
+			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 100, Qualifier: 9}))
+			if a := r.expect(t, asdu.P_AC_NA_1, asdu.CauseActivationCon); !a.Negative {
+				t.Errorf("activation with QPA 9 confirmed: %v", a)
+			}
+			send(asdu.New(asdu.CauseDeactivation, 5, asdu.ParameterActivation{IOA: 100, Qualifier: asdu.ActivateObjectParameter}))
+			if a := r.expect(t, asdu.P_AC_NA_1, asdu.CauseDeactivationCon); !a.Negative {
+				t.Errorf("deactivation confirmed: %v", a)
+			}
+			send(asdu.New(asdu.CauseSpontaneous, 5, asdu.ParameterFloat{IOA: 1, Value: 1, Qualifier: asdu.ParameterThreshold}))
+			r.expect(t, asdu.P_ME_NC_1, asdu.CauseUnknownCause)
 			send(asdu.New(asdu.CauseSpontaneous, 5, asdu.SingleCommand{IOA: 1000, Value: true}))
 			r.expect(t, asdu.C_SC_NA_1, asdu.CauseUnknownCause)
 			for _, a := range []*asdu.ASDU{

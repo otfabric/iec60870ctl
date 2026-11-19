@@ -5,6 +5,32 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.13.0
+
+**Date:** 2026-11-20
+**Previous release:** v0.12.2
+
+Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagged events of the iec104ctl station on a reset of pending events, writes the errors found before a command runs as JSON when JSON was asked for, and accepts each tool's name for the per-address scan. Built on go-iec60870-5 v0.10.0 and go-serial v0.6.0.
+
+### Changed
+
+- **All four tools: an error found before the command runs is written as JSON** when the command line has `--format json` (or `--format=json`) or `<TOOL>_FORMAT=json` is set: an unknown flag, a missing required flag, a flag value that does not parse (exit `2`), and an environment variable that does not parse (exit `3`). Before, these were one `error:` line on stderr whatever the format, against what [docs/json-output.md](docs/json-output.md) promised. The exit codes are unchanged; a script that read such an error from stderr with `--format json` reads one `{"error": …}` object on stdout now.
+- Built on go-iec60870-5 v0.10.0 (was v0.9.0) and go-serial v0.6.0 (was v0.5.0) (go-iec60870-5 RELEASE.md, v0.10.0; go-serial RELEASE.md, v0.6.0). docs/iec102ctl/LIMITATIONS.md and docs/iec103ctl/LIMITATIONS.md name go-iec60870-5 v0.10.0.
+
+### Added
+
+- iec101ctl and iec104ctl: **`client parameter`** (alias `param`) loads a parameter of measured value, `P_ME_NA_1`, `P_ME_NB_1` or `P_ME_NC_1` (`--qualifier threshold`, `smoothing`, `low-limit` or `high-limit`), or sends a parameter activation, `P_AC_NA_1` (`--qualifier loaded` at `--ioa 0`, `object` or `cyclic`), and waits for the activation confirmation (IEC 60870-5-104:2000 7.9; IEC 60870-5-101:2003 7.2.6.24, 7.2.6.25, 7.4.9, 7.4.10). It changes the station: everything is validated before anything is sent (exit `3`), it is sent once, and a refusal exits `6`. `--type`, `--ioa`, `--value` and `--qualifier` have no environment variable. JSON: `target`, `ca`, `ioa`, `type`, `value` (omitted for an activation), `qualifier`, `rtt_ms` ([docs/iec104ctl/json-output.md](docs/iec104ctl/json-output.md)).
+- iec101ctl and iec104ctl `server start`: the simulated station confirms a parameter of measured value for a measured value of its model, and a parameter activation, with a new `parameter` event (`detail` such as `loaded: threshold` or `activated: object parameter`). A parameter for another object, an unknown address or kind, a non-finite value and a cause other than activation are refused. The station keeps no parameters and does not apply them (LIMITATIONS.md). Before, it answered these types with "unknown type identification".
+- iec104ctl `server start`: a reset process command with the qualifier `events` (QRP 2, reset of pending information with time tag, IEC 60870-5-101:2003 7.2.6.27) removes the queued events that carry a time tag; the `reset` event has the `detail` `pending events: N with time tag cleared`. Before, the events stayed queued and reached the next controlling station. The iec101ctl station already cleared its queue.
+- iec104ctl `client scan --method ca` and iec101ctl `client scan --method sweep`: each tool accepts the other's name for one general interrogation per common address. The result reports the tool's own name (`sweep`, `ca`).
+
+### Documentation
+
+- [docs/exitcodes.md](docs/exitcodes.md) lists the partial exit `7` of iec102ctl (an REE session whose logout was not confirmed) and of iec103ctl (`client generic read` answered with cause 43), and `client parameter` among the commands that change a station.
+- The iec101ctl and iec104ctl JSON references say that `qualifier` of `client command` is a name for single, double and step commands and the number QL for set points.
+
+---
+
 ## v0.12.2
 
 **Date:** 2026-11-16

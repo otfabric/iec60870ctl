@@ -200,6 +200,45 @@ func (r *ConfirmedResult) TableRows() [][]string {
 	return [][]string{{strconv.Itoa(int(r.CommonAddr)), r.Request, detail, "confirmed", fmt.Sprintf("%.1f", r.RTTMs)}}
 }
 
+// ParameterResult is the result of `client parameter`: a parameter of measured value
+// loaded, or parameters activated, and confirmed by the station.
+type ParameterResult struct {
+	Target     string `json:"target"`
+	CommonAddr uint16 `json:"ca"`
+	IOA        uint32 `json:"ioa"`
+	// Type is the type identification sent: P_ME_NA_1, P_ME_NB_1, P_ME_NC_1 or P_AC_NA_1.
+	Type string `json:"type"`
+	// Value is the value of a parameter of measured value as sent (normalized values
+	// rounded to the 16-bit wire form); omitted for an activation.
+	Value any `json:"value,omitempty"`
+	// Qualifier is the kind of parameter (threshold, smoothing, low-limit, high-limit) or
+	// what an activation activates (loaded, object, cyclic).
+	Qualifier string  `json:"qualifier"`
+	RTTMs     float64 `json:"rtt_ms"`
+}
+
+// MarshalTextOutput implements format.TextMarshaler.
+func (r *ParameterResult) MarshalTextOutput() (string, error) {
+	if r.Value == nil {
+		return fmt.Sprintf("Parameter activation (%s) of IOA %d at station %d of %s confirmed in %.1f ms", r.Qualifier, r.IOA, r.CommonAddr, r.Target, r.RTTMs), nil
+	}
+	return fmt.Sprintf("Parameter %s = %v (%s) of IOA %d at station %d of %s confirmed in %.1f ms", r.Qualifier, r.Value, r.Type, r.IOA, r.CommonAddr, r.Target, r.RTTMs), nil
+}
+
+// TableHeaders implements format.TableMarshaler.
+func (r *ParameterResult) TableHeaders() []string {
+	return []string{"CA", "IOA", "TYPE", "QUALIFIER", "VALUE", "RESULT", "RTT_MS"}
+}
+
+// TableRows implements format.TableMarshaler.
+func (r *ParameterResult) TableRows() [][]string {
+	value := ""
+	if r.Value != nil {
+		value = fmt.Sprint(r.Value)
+	}
+	return [][]string{{strconv.Itoa(int(r.CommonAddr)), strconv.FormatUint(uint64(r.IOA), 10), r.Type, r.Qualifier, value, "confirmed", fmt.Sprintf("%.1f", r.RTTMs)}}
+}
+
 // DelayResult is the result of `client delay`.
 type DelayResult struct {
 	Target     string `json:"target"`
@@ -502,7 +541,7 @@ func (r *DiscoverResult) TableRows() [][]string {
 type ServerEvent struct {
 	Timestamp string `json:"timestamp"`
 	// Event is "listening", "connected", "busy", "link-up", "link-down", "disconnected",
-	// "interrogation", "counter-interrogation", "read", "command", "clock", "delay", "reset",
+	// "interrogation", "counter-interrogation", "read", "command", "parameter", "clock", "delay", "reset",
 	// "test", "refused" or "stopping".
 	Event  string `json:"event"`
 	Remote string `json:"remote,omitempty"`

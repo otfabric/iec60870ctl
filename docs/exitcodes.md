@@ -1,6 +1,6 @@
 # Process exit codes
 
-iec101ctl, iec102ctl, iec103ctl and iec104ctl share one set of stable exit codes for scripting. A fatal error is rendered once: as one `error:` line on stderr, or as a single JSON `error` object on stdout when `--format json` is active.
+iec101ctl, iec102ctl, iec103ctl and iec104ctl share one set of stable exit codes for scripting. A fatal error is rendered once: as one `error:` line on stderr, or as a single JSON `error` object on stdout when `--format json` is active, also for a usage error found before the command runs (`--format json` on the command line or `<TOOL>_FORMAT=json`).
 
 | Code | Meaning |
 |------|---------|
@@ -10,7 +10,7 @@ iec101ctl, iec102ctl, iec103ctl and iec104ctl share one set of stable exit codes
 | 4 | Transport (`KindTransport`): the connection or serial port cannot be opened (refused, unreachable, no such device, TLS failure), the link cannot be started, the secure session of IEC 62351-5 cannot be established, the connection is lost, the server cannot listen, or the serial port of a server fails while it is served (iec102ctl `server start --serial`, `connection_lost`) |
 | 5 | Timeout (`KindTimeout`): the station did not answer a request in time, or did not acknowledge within t1 (IEC 104) or the link time-out (IEC 101, 102, 103) |
 | 6 | Protocol (`KindProtocol`, `KindNegative`): the station refused the request (negative confirmation, or "unknown type / cause / common address / information object address"), violated the protocol, or answered a request with more than the result limit allows |
-| 7 | Partial success (`ExitPartial`): a **valid** result was written to stdout, and it holds failures: an address of `client read` that was refused or not answered, or a failed test of `client ping` |
+| 7 | Partial success (`ExitPartial`): a **valid** result was written to stdout, and it holds failures: an address of `client read` that was refused or not answered, a failed test of `client ping`; iec102ctl: an operation that succeeded in an REE session whose logout was not confirmed (`session.logout` is `false`); iec103ctl: a `client generic read` the device answered with cause 43, invalid data |
 | 10 | Output / internal (`KindOutput`, `KindInternal`): the result could not be written, or something unexpected happened |
 | 130 | Interrupted (`KindInterrupted`): Ctrl-C or SIGTERM before a one-shot command had its result. A second Ctrl-C or SIGTERM while a command is still ending (a logout, the end of a session or stream) ends the process at once with `130` |
 
@@ -33,7 +33,7 @@ iec101ctl, iec102ctl, iec103ctl and iec104ctl share one set of stable exit codes
 
 **Security (`--secure`, iec104ctl only):** a security flag without `--secure`, `--secure` without `--security-cert`, `--security-key` and `--security-trust`, a file that cannot be read or used, or an unknown algorithm or role exits `3` (`invalid_flag_combination` or `invalid_input`) before anything is sent or the server listens. `security_failed` (exit `4`) means that the association of IEC 62351-5 was not established after STARTDT: a certificate one side does not trust, an algorithm the station does not accept, a MAC that did not verify, or no answer to the key management within `--timeout`; nothing but the key management was sent. A request the station's roles do not permit is a `negative_confirmation` with cause `not-authorized` (17), exit `6`. A client without `--secure` gets no answer from a secure station: `request_timeout`, exit `5`.
 
-**Commands that change a station:** `client command`, `client clock`, `client reset`, `client counters` with a freeze or reset, `client file put` (iec104ctl), and the state-changing commands of the other tools that their guides list as such, validate everything before sending; a rejected invocation exits `3` and has sent nothing. A refusal by the station exits `6`, a missing answer `5`. Nothing is ever sent a second time.
+**Commands that change a station:** `client command`, `client parameter` (iec101ctl, iec104ctl), `client clock`, `client reset`, `client counters` with a freeze or reset, `client file put` (iec104ctl), and the state-changing commands of the other tools that their guides list as such, validate everything before sending; a rejected invocation exits `3` and has sent nothing. A refusal by the station exits `6`, a missing answer `5`. Nothing is ever sent a second time.
 
 **`--debug`:** adds the frame trace and, after a fatal error, the chain of causes (`cause: …` lines) on stderr. It does not change stdout or the exit code.
 
