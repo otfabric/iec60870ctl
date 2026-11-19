@@ -12,6 +12,11 @@ repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
 Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagged events of the iec104ctl station on a reset of pending events, writes the errors found before a command runs as JSON when JSON was asked for, and accepts each tool's name for the per-address scan. Built on go-iec60870-5 v0.10.0 and go-serial v0.6.0.
 
+### Breaking
+
+- **iec103ctl: the times the tool writes are RFC 3339 in UTC with milliseconds** (`2026-11-20T09:15:23.307Z`), as in iec101ctl and iec104ctl: `received` of `client monitor`, `timestamp` of the `server start` events, and `value` of its `clock-sync` event. Before, `received` and `timestamp` were local time with nanoseconds and the `clock-sync` value was in the device's time zone with nanoseconds. A script that parsed them as RFC 3339 keeps working; one that compared them as text against local times must convert. The time tags the device sends, and `sent` and `device_time` of `client clock`, stay in `--timezone`; CP32Time2a tags (`HH:MM:SS.mmm`) carry no date and stay as they are.
+- iec103ctl `client generic write`: `--gin`, `--type` and `--value` are no longer marked as required flags, because `--data` replaces them. Without `--data`, leaving one off still exits `2` (usage), but help and shell completion no longer show them as required.
+
 ### Changed
 
 - **All four tools: an error found before the command runs is written as JSON** when the command line has `--format json` (or `--format=json`) or `<TOOL>_FORMAT=json` is set: an unknown flag, a missing required flag, a flag value that does not parse (exit `2`), and an environment variable that does not parse (exit `3`). Before, these were one `error:` line on stderr whatever the format, against what [docs/json-output.md](docs/json-output.md) promised. The exit codes are unchanged; a script that read such an error from stderr with `--format json` reads one `{"error": …}` object on stdout now.
@@ -25,6 +30,11 @@ Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagge
 - iec101ctl and iec102ctl: **`--link-retries -1`** sends an unanswered frame once and does not repeat it (go-iec60870-5 link.Config). `0` stays the default, 3. A value outside -1 to 255 exits `3` before the line is opened; before, a negative value did not parse (exit `2`).
 - iec102ctl: `--ca` is accepted for `--common-address`, the name iec101ctl and iec104ctl use. Shell completion of `--type` for `client totals` (the reads of integrated totals `C_CI_NA_2` .. `C_CI_NU_2`) and `client request` (every type the tool knows by name).
 - iec104ctl `client scan --method ca` and iec101ctl `client scan --method sweep`: each tool accepts the other's name for one general interrogation per common address. The result reports the tool's own name (`sweep`, `ca`).
+
+- iec103ctl `client monitor`: filters `--type` (numbers or names), `--fun`, `--inf` and `--cause` (numbers or names), each a list or range (`--fun 160,176 --inf 64-71`), with the variables `IEC103CTL_MONITOR_TYPES`, `IEC103CTL_MONITOR_FUN`, `IEC103CTL_MONITOR_INF` and `IEC103CTL_MONITOR_CAUSE`. `--count` counts the messages shown.
+- iec103ctl `client generic write --data GIN[:KOD]=TYPE[/SIZE]:VALUE`, repeatable: up to 64 data sets in one write, in as many ASDUs 10 as they need, write entry (INF 248) and the last with write with execution (INF 250), for the device to activate together (IEC 60870-5-103:1997 7.4.8.6.3, as go-iec60870-5 implements it). Command line only; with `--gin`, `--type`, `--size` or `--value` on the command line it exits `3`.
+- iec103ctl `client types`: the ASDU types of IEC 60870-5-103 the tool knows (`count`, `types`: `id`, `name`, `description`, `direction` `monitor`, `control` or `both`), with `--direction`; `--type` of `client monitor` completes to them.
+- iec103ctl: `--ca` is accepted for `--common-address` and `--link-retries` for `--retries`, the names of the other tools; `--retries -1` is none, as `0`, and a value outside -1 to 10 exits `3`.
 
 ### Fixed
 
