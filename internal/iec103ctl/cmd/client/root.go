@@ -47,6 +47,7 @@ interrogation of clause 7.4.1: every command does only what it is asked to.`,
 		newDisturbanceCmd(),
 		newMonitorCmd(),
 		newScanCmd(),
+		newTypesCmd(),
 	)
 	return cmd
 }

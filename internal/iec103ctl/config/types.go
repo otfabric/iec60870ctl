@@ -19,9 +19,9 @@ type SerialConfig struct {
 // IEC 60870-5-103 clause 6.2 profiles it).
 type LinkConfig struct {
 	LinkAddress   uint16 `env:"IEC103CTL_LINK_ADDRESS" desc:"Link address of the protection equipment, 0-254 (255 is the broadcast address)" flag:"link-address"`
-	CommonAddress uint16 `env:"IEC103CTL_COMMON_ADDRESS" desc:"Common address of ASDU, 1-255 (0 = the link address, the normal case of clause 7.2.4)" flag:"common-address"`
+	CommonAddress uint16 `env:"IEC103CTL_COMMON_ADDRESS" desc:"Common address of ASDU, 1-255 (0 = the link address, the normal case of clause 7.2.4; also --ca)" flag:"common-address"`
 	LinkTimeout   uint32 `env:"IEC103CTL_LINK_TIMEOUT" desc:"Milliseconds to wait for the answer to a frame before it is repeated (0 = 1000)" flag:"link-timeout"`
-	Retries       int    `env:"IEC103CTL_RETRIES" desc:"How often an unanswered frame is repeated, 0-10" flag:"retries"`
+	Retries       int    `env:"IEC103CTL_RETRIES" desc:"How often an unanswered frame is repeated, 0-10 (-1 or 0 = none; also --link-retries)" flag:"retries"`
 	ResetFCB      bool   `env:"IEC103CTL_RESET_FCB" desc:"Initialize the link with reset FCB (function 7) instead of reset CU (function 0), which empties the device's transmit buffers" flag:"reset-fcb"`
 	PollInterval  uint32 `env:"IEC103CTL_POLL_INTERVAL" desc:"Milliseconds between class 2 polls when the equipment has nothing to send (0 = 100)" flag:"poll-interval"`
 	TimeZone      string `env:"IEC103CTL_TIMEZONE" desc:"Time zone of the time tags on the wire: utc, local or an IANA name such as Europe/Brussels (default utc)" flag:"timezone"`
@@ -102,11 +102,14 @@ type GenericGroupConfig struct {
 // GenericWriteConfig drives `client generic write`.
 type GenericWriteConfig struct {
 	ConnConfig
-	GIN          string `env:"IEC103CTL_GIN" desc:"Generic identification number of the entry: GROUP.ENTRY" flag:"gin"`
-	KOD          string `env:"IEC103CTL_KOD" desc:"Kind of description to write (default actual, KOD 1)" flag:"kod"`
-	Type         string `env:"IEC103CTL_DATA_TYPE" desc:"Data type of the value: ascii (1), uint (3), int (4), float32 (7) or float64 (8)" flag:"type"`
-	Size         uint16 `env:"IEC103CTL_SIZE" desc:"DATASIZE: octets of the value (uint, int: 1-8; ascii: the length of the text when 0)" flag:"size"`
-	Value        string `env:"IEC103CTL_VALUE" desc:"The value: text for ascii, a number for the others" flag:"value"`
+	GIN   string `env:"IEC103CTL_GIN" desc:"Generic identification number of the entry: GROUP.ENTRY" flag:"gin"`
+	KOD   string `env:"IEC103CTL_KOD" desc:"Kind of description to write (default actual, KOD 1)" flag:"kod"`
+	Type  string `env:"IEC103CTL_DATA_TYPE" desc:"Data type of the value: ascii (1), uint (3), int (4), float32 (7) or float64 (8)" flag:"type"`
+	Size  uint16 `env:"IEC103CTL_SIZE" desc:"DATASIZE: octets of the value (uint, int: 1-8; ascii: the length of the text when 0)" flag:"size"`
+	Value string `env:"IEC103CTL_VALUE" desc:"The value: text for ascii, a number for the others" flag:"value"`
+	// Data are the data sets of --data, GIN[:KOD]=TYPE[/SIZE]:VALUE each. The command
+	// registers the flag itself: it is repeatable and has no environment variable.
+	Data         []string
 	Mode         string `env:"IEC103CTL_WRITE_MODE" desc:"Procedure: execute (write with execution, INF 250) or abort (write entry, then write abort: nothing is activated); command line only (with the variable set and no --mode the write is refused)" flag:"mode"`
 	OutputFormat string `env:"IEC103CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
@@ -137,6 +140,16 @@ type MonitorConfig struct {
 	Duration     uint32 `env:"IEC103CTL_DURATION" desc:"Stop after this many seconds (0 = until interrupted)" flag:"duration"`
 	Count        uint32 `env:"IEC103CTL_COUNT" desc:"Stop after this many messages (0 = until interrupted)" flag:"count"`
 	NoReconnect  bool   `env:"IEC103CTL_NO_RECONNECT" desc:"Exit when the line is lost instead of connecting again" flag:"no-reconnect"`
+	Types        string `env:"IEC103CTL_MONITOR_TYPES" desc:"Only show these type identifications: names or numbers, lists and ranges (e.g. time-tagged-message,9 or 1-4)" flag:"type"`
+	Funs         string `env:"IEC103CTL_MONITOR_FUN" desc:"Only show these function types (FUN): lists and ranges of 0-255 (e.g. 128,160-162)" flag:"fun"`
+	Infs         string `env:"IEC103CTL_MONITOR_INF" desc:"Only show these information numbers (INF): lists and ranges of 0-255 (e.g. 64-71,144)" flag:"inf"`
+	Causes       string `env:"IEC103CTL_MONITOR_CAUSE" desc:"Only show these causes of transmission: names or numbers, lists and ranges (e.g. spontaneous,12 or 1-2)" flag:"cause"`
+	OutputFormat string `env:"IEC103CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
+}
+
+// TypesConfig drives `client types`.
+type TypesConfig struct {
+	Direction    string `env:"IEC103CTL_DIRECTION" desc:"Only list types of this direction: monitor or control (the types of both directions are listed with either)" flag:"direction"`
 	OutputFormat string `env:"IEC103CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 

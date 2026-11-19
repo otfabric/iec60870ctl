@@ -170,6 +170,22 @@ func TestDeviceAnswers(t *testing.T) {
 			t.Errorf("no %s event with %q", want.kind, want.detail)
 		}
 	}
+	// Every event, and the time a clock synchronization set, is RFC 3339 in UTC with
+	// milliseconds, as iec101ctl and iec104ctl write them.
+	utcMillis := func(what, s string) {
+		if _, err := time.Parse(time.RFC3339, s); err != nil || !strings.HasSuffix(s, "Z") || len(s) != len("2006-01-02T15:04:05.000Z") {
+			t.Errorf("%s %q is not UTC with milliseconds", what, s)
+		}
+	}
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	for _, e := range ev.es {
+		utcMillis(e.Event+" timestamp", e.Timestamp)
+		if e.Event == "clock-sync" {
+			v, _ := e.Value.(string)
+			utcMillis("clock-sync value", v)
+		}
+	}
 }
 
 func TestDeviceSimulatesAndMeasures(t *testing.T) {

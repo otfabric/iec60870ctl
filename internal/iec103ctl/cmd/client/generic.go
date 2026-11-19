@@ -4,6 +4,9 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/otfabric/iec60870ctl/internal/cli"
 	"github.com/otfabric/iec60870ctl/internal/envflag"
@@ -35,7 +38,7 @@ number (GIN) names an entry as GROUP.ENTRY; entry 0 is the group itself.
   entry        one attribute of one entry (INF 244)
   read         any generic read, with --inf and a list of identifiers
   interrogate  the general interrogation of generic data (INF 245)
-  write        write the value of one entry (INF 250), or stage and abort it
+  write        write the values of entries (INF 250), or stage and abort them
 
 A read the device answers with invalid data (cause 43) is shown, with the generic reply
 code of each identifier it could not read, and ends with exit code 7.`,
@@ -180,11 +183,21 @@ func newGroupCmd() *cobra.Command {
 func newGenericWriteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "write",
-		Short: "Write the value of one entry (INF 250), or stage it and abort",
-		Long: `Write one data set to the device (ASDU 10, cause 40, clause 7.4.8.6.3, figure 17): the
-attribute --kod (the actual value by default) of the entry --gin, with the data type --type
-(ascii, uint, int, float32 or float64), the size --size in octets (uint and int: 1-8) and
-the value --value.
+		Short: "Write the values of entries (INF 250), or stage them and abort",
+		Long: `Write data sets to the device (ASDU 10, cause 40, clause 7.4.8.6.3, figure 17). One data
+set is the attribute --kod (the actual value by default) of the entry --gin, with the data
+type --type (ascii, uint, int, float32 or float64), the size --size in octets (uint and
+int: 1-8) and the value --value.
+
+Several data sets are written together with a repeated --data GIN[:KOD]=TYPE[/SIZE]:VALUE
+instead (uint and int need /SIZE; the value is everything after the colon that follows
+the type, commas included), for example --data 1.2=float32:1.25 --data 1.3=uint/2:450.
+They go to the device in one write: as many ASDUs 10 as they need, every one but the last
+with write entry (INF 248), the last with write with execution (INF 250), for the device
+to activate them together or refuse them; with --mode abort every data set goes with
+write entry, and the write abort (INF 251) follows. --data cannot be combined with --gin,
+--type, --size or --value; it is taken only from the command line, and a write takes at
+most 64 data sets.
 
   --mode execute  write with execution (INF 250): the device checks the value and activates
                   it, answering with cause 40, or refuses it with cause 41 and a generic
@@ -200,27 +213,34 @@ THIS CHANGES THE DEVICE: a setting written with execution is in force at once, o
 protection relay a pick-up value or a delay. Everything is validated before anything is
 sent, and the write is sent exactly once (only the abort of --mode abort may be sent
 again). --mode is taken only from the command line: with IEC103CTL_WRITE_MODE set and no
---mode, the command is refused (exit code 3) and nothing is sent.`,
+--mode, the command is refused (exit code 3) and nothing is sent. Without --data, --gin,
+--type and --value must be on the command line (exit code 2 otherwise).`,
 		Example: `
   # Pick-up current 1.25 (an R32.23 setting)
   iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.2 --type float32 --value 1.25
 
   # A delay of 450 as an unsigned integer of two octets
   iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.3 --type uint --size 2 --value 450
+
+  # Both in one write, activated together
+  iec103ctl client generic write --url tcp://10.0.0.20 --data 1.2=float32:1.25 --data 1.3=uint/2:450
 `,
 	}
 	cfg := config.GenericWriteConfig{ConnConfig: connDefaults(), KOD: "actual", Mode: iec.WriteExecute, OutputFormat: stdoutFormat}
 	wire(cmd, &cfg, kodCompletion, enum("type", iec.WriteTypes()...), described("mode", iec.WriteModes()))
-	for _, f := range []string{"gin", "type", "value"} {
-		cli.MustMarkFlagRequired(cmd, f)
-	}
+	cmd.Flags().StringArrayVar(&cfg.Data, "data", nil,
+		"A data set to write, GIN[:KOD]=TYPE[/SIZE]:VALUE (e.g. 1.2=float32:1.25 or 1.3=uint/2:450); repeat it to write several together; command line only, not with --gin, --type, --size or --value")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		// The mode decides whether the value is activated, and its default (execute) does
 		// more than abort: a mode from IEC103CTL_WRITE_MODE refuses the command, before
 		// anything else is validated or sent.
 		fromEnv := envflag.NotFromEnvironment(cmd, "mode")
+		missing := writeFlags(cmd, &cfg)
 		return formatted(cmd, cfg.OutputFormat, &cfg.Debug,
 			func() error {
+				if missing != nil {
+					return missing
+				}
 				if fromEnv != nil {
 					return errs.InvalidInput(errs.CodeInvalidFlagCombination, fromEnv.Error(), nil)
 				}
@@ -231,4 +251,34 @@ again). --mode is taken only from the command line: with IEC103CTL_WRITE_MODE se
 			})
 	}
 	return cmd
+}
+
+// writeFlags settles where the data sets of `client generic write` come from. With --data,
+// the values that --gin, --type, --size and --value took from their environment variables
+// are dropped: only the command line can combine them with --data. Without it, --gin,
+// --type and --value must be on the command line: the usage error (exit code 2) a missing
+// required flag gets.
+func writeFlags(cmd *cobra.Command, cfg *config.GenericWriteConfig) error {
+	if len(cfg.Data) > 0 {
+		for name, reset := range map[string]func(){
+			"gin": func() { cfg.GIN = "" }, "type": func() { cfg.Type = "" },
+			"size": func() { cfg.Size = 0 }, "value": func() { cfg.Value = "" },
+		} {
+			if !cmd.Flags().Changed(name) {
+				reset()
+			}
+		}
+		return nil
+	}
+	var missing []string
+	for _, name := range []string{"gin", "type", "value"} {
+		if !cmd.Flags().Changed(name) {
+			missing = append(missing, strconv.Quote(name))
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return errs.New(errs.KindUsage, errs.CodeInvalidInput,
+		fmt.Sprintf("required flag(s) %s not set (or give the data sets as --data)", strings.Join(missing, ", ")), nil)
 }
