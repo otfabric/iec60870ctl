@@ -10,7 +10,7 @@ repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 **Date:** 2026-11-20
 **Previous release:** v0.12.2
 
-Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagged events of the iec104ctl station on a reset of pending events, writes the errors found before a command runs as JSON when JSON was asked for, and accepts each tool's name for the per-address scan. Built on go-iec60870-5 v0.10.0 and go-serial v0.6.0.
+Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagged events of the iec104ctl station on a reset of pending events, writes the errors found before a command runs as JSON when JSON was asked for, adds redundancy groups to iec104ctl, monitor filters, multi-set generic writes and `client types` to iec103ctl, writes the times of iec103ctl in UTC, and makes the link flags and completions of the serial tools consistent. Built on go-iec60870-5 v0.10.0 and go-serial v0.6.0.
 
 ### Breaking
 
@@ -35,6 +35,9 @@ Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagge
 - iec103ctl `client generic write --data GIN[:KOD]=TYPE[/SIZE]:VALUE`, repeatable: up to 64 data sets in one write, in as many ASDUs 10 as they need, write entry (INF 248) and the last with write with execution (INF 250), for the device to activate together (IEC 60870-5-103:1997 7.4.8.6.3, as go-iec60870-5 implements it). Command line only; with `--gin`, `--type`, `--size` or `--value` on the command line it exits `3`.
 - iec103ctl `client types`: the ASDU types of IEC 60870-5-103 the tool knows (`count`, `types`: `id`, `name`, `description`, `direction` `monitor`, `control` or `both`), with `--direction`; `--type` of `client monitor` completes to them.
 - iec103ctl: `--ca` is accepted for `--common-address` and `--link-retries` for `--retries`, the names of the other tools; `--retries -1` is none, as `0`, and a value outside -1 to 10 exits `3`.
+
+- iec104ctl client: **`--standby-url`** (`IEC104CTL_STANDBY_URL`), repeatable or comma-separated, up to 8 further addresses of the same station: with the station's URL they form a redundancy group (IEC 60870-5-104:2000 clause 10, go-iec60870-5 `client.Group`). A one-shot command runs on the connection with data transfer started, which the result's `target` names, and is never sent again on another connection. `client monitor` follows a switchover (`monitor: switchover: data transfer on <url>` on stderr, "N switchovers" in the summary), runs `--interrogate` on the connection that takes over, and with `--no-reconnect` exits `4` when no connection of the group is left. Another scheme, a duplicate address or more than 8 URLs exit `3` before anything is sent. The group starts data transfer on the first connection established, not preferably on `--url` (LIMITATIONS.md).
+- iec104ctl `server start`: **`--redundancy-group name=address|prefix|*`** (`IEC104CTL_REDUNDANCY_GROUP`, repeatable) and **`--event-queue`** (`IEC104CTL_EVENT_QUEUE`, 1024 by default, at most 65536), and the model section `redundancy: {event_queue, groups: [{name, allow}]}` ([docs/iec104ctl/server-config.md](docs/iec104ctl/server-config.md)). Each group has its own event queue; a STARTDT on another connection of the group takes over from the started one. A full queue drops its oldest event, the only policy of go-iec60870-5. A connection no group allows is refused with a `refused` event; the connection events carry a new JSON field `group`, omitted without groups. Without the new flags or section nothing changes.
 
 ### Fixed
 
