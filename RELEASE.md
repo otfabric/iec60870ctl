@@ -41,6 +41,7 @@ Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagge
 
 ### Fixed
 
+- iec101ctl tests: `TestStationServices` no longer fails when the station logs `link-up` before `connected`; the two come from different goroutines (seen under `-race`).
 - iec101ctl: shell completion of `--type` (`client interrogate`, `client monitor`) offers only the types IEC 60870-5-101 defines; before, it also offered IEC 104 types such as `C_SC_TA_1` and `C_TS_TA_1`.
 
 ### Documentation

@@ -302,8 +302,10 @@ func TestStationServices(t *testing.T) {
 				send(a)
 				r.expect(t, a.Type, asdu.CauseDeactivationCon)
 			}
+			// "connected" is logged when the line is served and "link-up" from the link's
+			// state callback: either may come first.
 			ev := r.events()
-			if len(ev) < 20 || ev[0].Event != "connected" {
+			if len(ev) < 20 || (ev[0].Event != "connected" && ev[1].Event != "connected") {
 				t.Errorf("events: %+v", ev)
 			}
 		})
