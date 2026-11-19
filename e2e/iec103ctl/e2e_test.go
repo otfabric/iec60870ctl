@@ -81,6 +81,8 @@ type device struct {
 	mu   sync.Mutex
 	dpi  iec103.DPI
 	pick float32
+	// sets are the data sets of the last write with execution.
+	sets []iec103.DataSet
 }
 
 func (d *device) HandleASDU(s *server.Server, a *iec103.ASDU) {
@@ -107,7 +109,10 @@ func (d *device) HandleASDU(s *server.Server, a *iec103.ASDU) {
 			_ = s.GenericAnswer(a, iec103.CauseGenericReadValid, iec103.DataSet{GIN: iec103.GIN{Group: 2}, KOD: 10, Value: iec103.ASCII("SETTINGS")})
 		}
 	case iec103.GenericData:
-		if a.Inf == iec103.InfWriteExecute && len(b.Sets) == 1 && b.Sets[0].Value.Type == iec103.DataFloat32 {
+		if a.Inf == iec103.InfWriteExecute {
+			d.sets = append([]iec103.DataSet(nil), b.Sets...)
+		}
+		if a.Inf == iec103.InfWriteExecute && len(b.Sets) >= 1 && b.Sets[0].Value.Type == iec103.DataFloat32 {
 			f, _ := b.Sets[0].Value.Float(0)
 			d.pick = float32(f)
 			_ = s.GenericAnswer(a, iec103.CauseGenericWriteAck)
@@ -137,8 +142,8 @@ func (d *device) Record(fan uint16) (*iec103.Disturbance, bool) {
 func (d *device) Transmitted(uint16, bool) {}
 
 // libraryDevice serves go-iec60870-5's protection equipment on a loopback port, one line
-// at a time, and returns its URL.
-func libraryDevice(t *testing.T) string {
+// at a time, and returns its URL and the application.
+func libraryDevice(t *testing.T) (string, *device) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -164,7 +169,7 @@ func libraryDevice(t *testing.T) string {
 		}
 	})
 	t.Cleanup(func() { _ = ln.Close(); wg.Wait() })
-	return "tcp://" + ln.Addr().String()
+	return "tcp://" + ln.Addr().String(), d
 }
 
 // watched reports the end of a line: the first failed read.
@@ -199,7 +204,7 @@ func clientJSON(t *testing.T, url string, v any, args ...string) {
 
 // The binary's controlling system against go-iec60870-5's protection equipment.
 func TestClientAgainstLibraryServer(t *testing.T) {
-	url := libraryDevice(t)
+	url, dev := libraryDevice(t)
 	var id struct {
 		Identifications []struct {
 			Cause        int    `json:"cause"`
@@ -258,6 +263,16 @@ func TestClientAgainstLibraryServer(t *testing.T) {
 	if g.Cause != 42 || len(g.Sets) != 1 || g.Sets[0].Values[0] != 2.75 {
 		t.Fatalf("%+v", g)
 	}
+	// Two data sets in one write with execution (one ASDU 10, NGD 2).
+	clientJSON(t, url, &g, "generic", "write", "--data", "2.1=float32:1.5", "--data", "2.2:actual=uint/2:450")
+	if g.Cause != 40 {
+		t.Fatalf("%+v", g)
+	}
+	dev.mu.Lock()
+	if len(dev.sets) != 2 || dev.sets[1].GIN != (iec103.GIN{Group: 2, Entry: 2}) || dev.sets[1].Value.Type != iec103.DataUint {
+		t.Errorf("the device received %+v, want 2.1 and 2.2", dev.sets)
+	}
+	dev.mu.Unlock()
 	clientJSON(t, url, &g, "generic", "headings")
 	if len(g.Sets) != 1 || g.Sets[0].GIN != "2.0" {
 		t.Fatalf("%+v", g)
@@ -302,6 +317,19 @@ func TestClientAgainstLibraryServer(t *testing.T) {
 	out, _, code := run(t, "client", "monitor", "--url", url, "--link-address", "4", "--interrogate", "--count", "3", "--format", "json")
 	if code != 0 || strings.Count(out, "\n") != 3 {
 		t.Fatalf("exit %d\n%s", code, out)
+	}
+	// Only the answer for INF 18 passes; received is UTC with milliseconds.
+	out, _, code = run(t, "client", "monitor", "--url", url, "--ca", "4", "--link-address", "4", "--interrogate", "--count", "1",
+		"--type", "time-tagged-message", "--inf", "18", "--cause", "general-interrogation", "--format", "json")
+	var m struct {
+		Inf      int    `json:"inf"`
+		Received string `json:"received"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &m) != nil || m.Inf != 18 || !strings.HasSuffix(m.Received, "Z") {
+		t.Fatalf("filtered monitor: exit %d\n%s", code, out)
+	}
+	if out, _, code := run(t, "client", "types", "--direction", "control"); code != 0 || !strings.Contains(out, "generic-command") {
+		t.Fatalf("types: exit %d\n%s", code, out)
 	}
 }
 

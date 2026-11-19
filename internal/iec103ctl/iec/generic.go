@@ -228,16 +228,43 @@ func GenericReadGroup(ctx context.Context, cfg *config.GenericGroupConfig, stder
 		})
 }
 
-// checkWrite validates `client generic write` and returns the data set it writes.
-func checkWrite(cfg *config.GenericWriteConfig) (iec103.DataSet, error) {
+// checkWrite validates `client generic write` and returns the data sets it writes: those
+// of --data, or the one of --gin, --kod, --type, --size and --value.
+func checkWrite(cfg *config.GenericWriteConfig) ([]iec103.DataSet, error) {
 	if _, err := CheckConn(&cfg.ConnConfig); err != nil {
-		return iec103.DataSet{}, err
+		return nil, err
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
 	case WriteExecute, WriteAbort:
 	default:
-		return iec103.DataSet{}, fmt.Errorf("invalid --mode %q: use execute or abort", cfg.Mode)
+		return nil, fmt.Errorf("invalid --mode %q: use execute or abort", cfg.Mode)
 	}
+	if len(cfg.Data) == 0 {
+		set, err := checkWriteFlags(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return []iec103.DataSet{set}, nil
+	}
+	if cfg.GIN != "" || cfg.Type != "" || cfg.Value != "" || cfg.Size != 0 {
+		return nil, errs.InvalidInput(errs.CodeInvalidFlagCombination, "--data cannot be used with --gin, --type, --size or --value: give every data set as --data", nil)
+	}
+	if len(cfg.Data) > MaxDataSets {
+		return nil, fmt.Errorf("%d data sets: one write takes at most %d", len(cfg.Data), MaxDataSets)
+	}
+	sets := make([]iec103.DataSet, 0, len(cfg.Data))
+	for _, d := range cfg.Data {
+		set, err := ParseDataSet(d)
+		if err != nil {
+			return nil, err
+		}
+		sets = append(sets, set)
+	}
+	return sets, nil
+}
+
+// checkWriteFlags returns the data set of --gin, --kod, --type, --size and --value.
+func checkWriteFlags(cfg *config.GenericWriteConfig) (iec103.DataSet, error) {
 	gin, err := ParseGIN(cfg.GIN)
 	if err != nil {
 		return iec103.DataSet{}, err
@@ -263,13 +290,13 @@ func CheckGenericWrite(cfg *config.GenericWriteConfig) error {
 	return err
 }
 
-// GenericWriteSet writes one data set (clause 7.4.8.6.3, figure 17), once: with execution
+// GenericWriteSet writes the data sets (clause 7.4.8.6.3, figure 17), once: with execution
 // (INF 250), or staged with write entry (INF 248) and then aborted (INF 251). The abort is
 // also sent when the write entry failed, on a context of its own: the link layer may still
 // deliver the write entry. When the abort was not acknowledged, the error says that the
 // value may still be staged on the device.
 func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr io.Writer) (*types.GenericResult, error) {
-	set, err := checkWrite(cfg)
+	sets, err := checkWrite(cfg)
 	if err != nil {
 		return nil, errs.WrapValidation(err)
 	}
@@ -291,7 +318,7 @@ func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr
 		}
 		if mode == WriteAbort {
 			inf = iec103.InfWriteAbort
-			if e := w.Stage(rctx, set); e != nil {
+			if e := w.Stage(rctx, sets...); e != nil {
 				// The link layer still delivers a write entry whose confirmation rctx did
 				// not wait for: the abort gets a context of its own, so that INF 251 is sent.
 				actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout())
@@ -304,7 +331,7 @@ func GenericWriteSet(ctx context.Context, cfg *config.GenericWriteConfig, stderr
 			staging, abortErr = e != nil, e
 			return e
 		}
-		r, e = w.Execute(rctx, set)
+		r, e = w.Execute(rctx, sets...)
 		return e
 	})
 	res := genericResult(s, GenericWrite, inf, r, start)

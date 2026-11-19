@@ -64,6 +64,8 @@ stderr. Exit codes are stable: see docs/exitcodes.md.`,
 		newCompletionCmd(),
 		newVersionCmd(),
 	)
+	// --ca and --link-retries are the names iec101ctl and iec102ctl give these flags.
+	clihelp.FlagAliases(root, map[string]string{"ca": "common-address", "link-retries": "retries"})
 	// Every other flag and argument completes no file names, except these files.
 	clihelp.CompleteRest(root, map[string][]string{
 		"config": {"yaml", "yml", "json"}, "output": nil, "csv": {"csv"},

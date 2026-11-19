@@ -32,14 +32,22 @@ Monitoring runs until interrupted (Ctrl-C), or until --duration seconds have pas
 arrives: one line with --format text, one JSON object per line with --format json, or one
 table row with --format table. Link state changes and a summary go to stderr.
 
+--type, --fun, --inf and --cause show only the messages with these type identifications,
+function types, information numbers and causes of transmission: lists and ranges, types
+and causes also by name (see "iec103ctl client types"). A message must pass every filter
+given; --count counts the messages shown.
+
 A line has one controlling system: while you monitor, the regular one cannot poll.`,
 		Example: `
   iec103ctl client monitor --url tcp://10.0.0.20 --interrogate
   iec103ctl client monitor --url serial:///dev/ttyUSB0 --duration 60 --format json > events.jsonl
+
+  # Only the spontaneous time-tagged messages of the distance protection (FUN 128)
+  iec103ctl client monitor --url tcp://10.0.0.20 --type time-tagged-message --fun 128 --cause spontaneous
 `,
 	}
 	cfg := config.MonitorConfig{ConnConfig: connDefaults(), OutputFormat: stdoutFormat}
-	wire(cmd, &cfg)
+	wire(cmd, &cfg, enum("type", iec.TypeNames()...), enum("cause", iec.CauseNames()...))
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.Debug = cli.Debug(cmd)
 		return runner.RunStream(cmd, cfg.OutputFormat,
@@ -54,6 +62,30 @@ A line has one controlling system: while you monitor, the regular one cannot pol
 				}
 				return errs.ExitOK, nil
 			})
+	}
+	return cmd
+}
+
+func newTypesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "types",
+		Short: "List the ASDU type identifications of IEC 60870-5-103",
+		Long: `List the type identifications of the compatible range that IEC 60870-5-103 defines
+(clause 7.2.1, tables 3 and 4) with their number, name, direction and description. The
+names are what --type of "client monitor" takes, and what the output of every command
+shows. Types 6 (time synchronization) and 10 (generic data) exist in both directions and
+are listed with either --direction. No connection is made.`,
+		Example: `
+  iec103ctl client types
+  iec103ctl client types --direction control --format table
+`,
+	}
+	cfg := config.TypesConfig{OutputFormat: stdoutFormat}
+	wire(cmd, &cfg, enum("direction", "monitor", "control"))
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		return runner.RunFormattedChecked(cmd, cfg.OutputFormat,
+			func() error { return iec.CheckTypes(&cfg) },
+			func(context.Context) (any, error) { return iec.Types(&cfg), nil })
 	}
 	return cmd
 }

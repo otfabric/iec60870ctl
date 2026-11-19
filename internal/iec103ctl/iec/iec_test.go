@@ -538,11 +538,20 @@ func TestCheckConn(t *testing.T) {
 	if _, err := CheckConn(&ok); err != nil {
 		t.Fatal(err)
 	}
+	// -1 is none, as with 0: the value iec101ctl and iec102ctl take for no repetition.
+	for _, r := range []int{-1, 0, MaxRetries} {
+		c := conn("tcp://h")
+		c.Retries = r
+		if _, err := CheckConn(&c); err != nil {
+			t.Errorf("--retries %d: %v", r, err)
+		}
+	}
 	for _, f := range []func(*config.ConnConfig){
 		func(c *config.ConnConfig) { c.URL = "" },
 		func(c *config.ConnConfig) { c.LinkAddress = 255 },
 		func(c *config.ConnConfig) { c.CommonAddress = 256 },
-		func(c *config.ConnConfig) { c.Retries = -1 },
+		func(c *config.ConnConfig) { c.Retries = -2 },
+		func(c *config.ConnConfig) { c.Retries = MaxRetries + 1 },
 		func(c *config.ConnConfig) { c.TimeZone = "Mars/Base" },
 		func(c *config.ConnConfig) { c.Parity = "mark" },
 	} {

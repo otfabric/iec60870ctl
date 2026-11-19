@@ -7,6 +7,7 @@ import (
 
 	"github.com/otfabric/go-iec60870-5/iec103"
 	"github.com/otfabric/iec60870ctl/internal/iec103ctl/config"
+	"github.com/otfabric/iec60870ctl/internal/iec103ctl/types"
 )
 
 // The parsers of user input never panic, and what they accept is in range.
@@ -119,6 +120,44 @@ func FuzzCheckConn(f *testing.F) {
 		}
 		if !tg.Serial() && tg.Port == 0 {
 			t.Fatalf("port 0 accepted: %+v", tg)
+		}
+	})
+}
+
+func FuzzParseDataSet(f *testing.F) {
+	for _, s := range []string{"1.2=float32:1.25", "1.3:actual=uint/2:450", "2.1:10=ascii:A: B, C", "1.2=uint:1", "=", "1.2=int/8:-9223372036854775808", "1.2=float64:NaN"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		d, err := ParseDataSet(s)
+		if err != nil {
+			return
+		}
+		if back, err := ParseGIN(GINText(d.GIN)); err != nil || back != d.GIN {
+			t.Fatalf("%q -> GIN %v does not round-trip", s, d.GIN)
+		}
+		if _, err := iec103.PackGenericData(1, []iec103.DataSet{d}); err != nil {
+			t.Fatalf("%q -> %+v does not encode: %v", s, d, err)
+		}
+	})
+}
+
+func FuzzParseMonitorFilter(f *testing.F) {
+	for _, s := range []string{"1-4", "time-tagged-message,9", "spontaneous,12", "0-255", "4-1", ",,", "reset-fcb", "1-"} {
+		f.Add(s, uint8(1), uint8(160), uint8(16))
+	}
+	f.Fuzz(func(t *testing.T, s string, typ, fun, inf uint8) {
+		filter, err := ParseMonitorFilter(&config.MonitorConfig{Types: s, Funs: s, Infs: s, Causes: s})
+		if err != nil {
+			return
+		}
+		// A filter of the same list for every field passes a message whose values are all in it.
+		m := types.Message{TypeID: typ, Fun: fun, Inf: inf, Cause: typ}
+		if filter.Funs != nil && filter.Funs[fun] && filter.Infs[inf] && filter.Types[typ] && filter.Causes[typ] && !filter.Match(&m) {
+			t.Fatalf("%q: %+v does not pass", s, m)
+		}
+		if filter.Funs == nil && !filter.Match(&m) {
+			t.Fatalf("%q: an empty filter refused %+v", s, m)
 		}
 	})
 }

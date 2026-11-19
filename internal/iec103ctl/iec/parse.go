@@ -190,3 +190,52 @@ func ParseValue(t iec103.DataType, size uint16, value string) (iec103.Value, err
 		return iec103.Value{}, fmt.Errorf("data type %d cannot be written", t)
 	}
 }
+
+// MaxDataSets bounds the --data of one generic write. The library splits them over as many
+// ASDUs 10 as they need (INF 248 with CONT = 1, the last with INF 250 or 251, clause
+// 7.4.8.6.3); the bound keeps one write to a size a device can be expected to stage.
+const MaxDataSets = 64
+
+// ParseDataSet parses one --data of a generic write: GIN[:KOD]=TYPE[/SIZE]:VALUE, for
+// example 1.2=float32:1.25, 1.3=uint/2:450 or 2.1:actual=ascii:LINE 1. The value is what
+// follows the first colon after TYPE[/SIZE], colons and commas included; KOD defaults to
+// the actual value (1).
+func ParseDataSet(s string) (iec103.DataSet, error) {
+	left, right, ok := strings.Cut(s, "=")
+	if !ok {
+		return iec103.DataSet{}, fmt.Errorf("invalid --data %q: use GIN[:KOD]=TYPE[/SIZE]:VALUE, e.g. 1.2=float32:1.25", s)
+	}
+	ginText, kodText, _ := strings.Cut(left, ":")
+	gin, err := ParseGIN(ginText)
+	if err != nil {
+		return iec103.DataSet{}, fmt.Errorf("--data %q: %w", s, err)
+	}
+	kod, err := ParseKOD(kodText, iec103.KODActualValue)
+	if err != nil {
+		return iec103.DataSet{}, fmt.Errorf("--data %q: %w", s, err)
+	}
+	typeText, value, ok := strings.Cut(right, ":")
+	if !ok {
+		return iec103.DataSet{}, fmt.Errorf("invalid --data %q: no value: use GIN[:KOD]=TYPE[/SIZE]:VALUE", s)
+	}
+	typeText, sizeText, hasSize := strings.Cut(typeText, "/")
+	t, err := ParseDataType(typeText)
+	if err != nil {
+		return iec103.DataSet{}, fmt.Errorf("--data %q: %w", s, err)
+	}
+	var size uint16
+	if hasSize {
+		n, err := strconv.ParseUint(strings.TrimSpace(sizeText), 10, 8)
+		if err != nil {
+			return iec103.DataSet{}, fmt.Errorf("invalid --data %q: the size %q is not a number 0-255", s, sizeText)
+		}
+		size = uint16(n)
+	} else if t == iec103.DataUint || t == iec103.DataInt {
+		return iec103.DataSet{}, fmt.Errorf("invalid --data %q: a uint or int needs its size in octets: TYPE/SIZE, e.g. uint/2", s)
+	}
+	v, err := ParseValue(t, size, value)
+	if err != nil {
+		return iec103.DataSet{}, fmt.Errorf("--data %q: %w", s, err)
+	}
+	return iec103.DataSet{GIN: gin, KOD: kod, Value: v}, nil
+}
