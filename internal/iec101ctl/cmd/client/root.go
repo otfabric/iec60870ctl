@@ -92,9 +92,11 @@ func LinkCompletion(cmd *cobra.Command) {
 	}
 }
 
-// typeCompletion completes --type with the names of the type identifications.
+// typeCompletion completes --type with the names of the type identifications that
+// IEC 60870-5-101 defines: not the IEC 104 types with a time tag in control direction,
+// C_TS_TA_1 or the security types.
 func typeCompletion(cmd *cobra.Command) {
-	names := iec.TypeNames()
+	names := iec.TypeNames101()
 	sort.Strings(names)
 	_ = cli.RegisterEnumFlagCompletion(cmd, "type", names)
 }

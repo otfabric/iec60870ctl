@@ -59,6 +59,8 @@ stderr. Exit codes are stable: see docs/exitcodes.md.`,
 		newCompletionCmd(),
 		newVersionCmd(),
 	)
+	// --ca as in iec101ctl and iec104ctl.
+	clihelp.FlagAliases(root, map[string]string{"ca": "common-address"})
 	// Every other flag and argument completes no file names, except these files.
 	clihelp.CompleteRest(root, map[string][]string{"config": {"yaml", "yml", "json"}, "output": nil, "access-key-file": nil}, nil)
 	return root

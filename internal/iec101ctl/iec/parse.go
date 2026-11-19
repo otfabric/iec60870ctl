@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
+	"github.com/otfabric/go-iec60870-5/iec101"
 	"github.com/otfabric/iec60870ctl/internal/iec101ctl/types"
 )
 
@@ -132,6 +133,18 @@ func TypeNames() []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, id.String())
+	}
+	return out
+}
+
+// TypeNames101 returns the names of TypeNames that IEC 60870-5-101 defines
+// (iec101.Defined101), sorted by number.
+func TypeNames101() []string {
+	var out []string
+	for _, name := range TypeNames() {
+		if iec101.Defined101(typeNames[strings.ToUpper(name)]) {
+			out = append(out, name)
+		}
 	}
 	return out
 }

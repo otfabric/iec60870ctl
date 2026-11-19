@@ -231,6 +231,8 @@ func TestClientInputErrors(t *testing.T) {
 		{"ping", "--interval", "0"},
 		{"ping", "--ca", "0"},
 		{"scan", "--method", "ca", "--start", "0"},
+		{"interrogate", "--link-retries", "-2"},
+		{"interrogate", "--link-retries", "256"},
 		{"scan", "--method", "link", "--end", "255"},
 		{"monitor", "--ca", "x"},
 		{"monitor", "--ioa", "1-"},

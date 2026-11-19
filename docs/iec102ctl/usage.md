@@ -58,9 +58,9 @@ Every link and ASDU parameter must match the meter: the link address and its siz
 | `--ip`, `--port` | the terminal server, instead of `--url` |
 | `--baud`, `--data-bits`, `--parity`, `--stop-bits` | the serial line (FT 1.2: 9600 baud, 8 data bits, even parity, 1 stop bit) |
 | `--link-address`, `--link-address-size` | the meter's link address, and the octets of the address field (1, 2, or 0 for none) |
-| `--common-address`, `--ca-size` | the measuring point address and its octets (1 or 2) |
+| `--common-address` (also `--ca`), `--ca-size` | the measuring point address and its octets (1 or 2); `--ca` is the name iec101ctl and iec104ctl use |
 | `--timezone` | the zone of the meter's clock: times without a zone are read in it, and it sets the SU bit (`utc` by default; Spanish meters keep `Europe/Madrid`) |
-| `--link-timeout`, `--link-retries` | how long to wait for the answer to a frame, and how often to repeat it with the same frame count bit |
+| `--link-timeout`, `--link-retries` | how long to wait for the answer to a frame (1000 ms), and how often to repeat it with the same frame count bit (3; `-1`: never, the frame is sent once) |
 | `--timeout` | milliseconds for connecting, starting the link and each request (30000) |
 | `--profile` | `standard`, or `ree` to decode the types of the REE profile |
 | `--access-key-file` | a file holding the REE access key (or give it with `IEC102CTL_ACCESS_KEY`): the operation runs in a session (C_AC_NA_2 before, C_FS_NA_2 after); implies `--profile ree` |

@@ -50,7 +50,7 @@ type LinkConfig struct {
 	CASize          uint8  `env:"IEC102CTL_CA_SIZE" desc:"Octets of the common address: 1 or 2" flag:"ca-size"`
 	TimeZone        string `env:"IEC102CTL_TIMEZONE" desc:"Time zone of the meter's clock, in which times without a zone are read and the SU bit is set: utc, local or an IANA name such as Europe/Madrid (default utc)" flag:"timezone"`
 	LinkTimeout     uint32 `env:"IEC102CTL_LINK_TIMEOUT" desc:"Milliseconds to wait for the answer to a frame before repeating it (0 = 1000)" flag:"link-timeout"`
-	LinkRetries     uint8  `env:"IEC102CTL_LINK_RETRIES" desc:"How often an unanswered frame is repeated, with the same FCB (0 = 3)" flag:"link-retries"`
+	LinkRetries     int    `env:"IEC102CTL_LINK_RETRIES" desc:"How often an unanswered frame is repeated, with the same FCB, -1-255 (0 = 3, -1 = none)" flag:"link-retries"`
 }
 
 // SessionConfig selects the REE profile and its session.

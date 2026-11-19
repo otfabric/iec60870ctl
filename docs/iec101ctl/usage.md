@@ -45,7 +45,7 @@ Every client command opens the line, brings up the link (request status of link,
 | `--remote-link-address` | Balanced only: the link address of the controlling station (default: `--link-address`) |
 | `--link-address-size` | Octets of the link address field: 1 (default) or 2; 0 (no address) in balanced mode only |
 | `--cot-size`, `--ca-size`, `--ioa-size` | Octets of the cause of transmission (1 or 2), the common address (1 or 2) and the information object address (1, 2 or 3). Defaults 1, 1 and 2 |
-| `--link-timeout`, `--link-retries` | How long the link layer waits for the answer to a frame before it repeats it (1000 ms) and how often (3). On a slow line raise the time-out: IEC 60870-5-101 6.2.2 gives about 2.25 s at 1200 bit/s |
+| `--link-timeout`, `--link-retries` | How long the link layer waits for the answer to a frame before it repeats it (1000 ms) and how often (3; `--link-retries -1`: never, the frame is sent once). On a slow line raise the time-out: IEC 60870-5-101 6.2.2 gives about 2.25 s at 1200 bit/s |
 | `--poll-interval` | Unbalanced: the pause between class 2 polls when the station has nothing to send (100 ms) |
 | `--strict` | Apply the IEC 60870-5-101 profile checks of go-iec60870-5 to every ASDU sent and received |
 | `--timeout` | Bringing up the link and each request (10 s). A TCP line that closes during the link start-up (a terminal server still serving the previous connection) is opened again until the timeout |

@@ -126,6 +126,9 @@ type Session struct {
 	Meter   types.Meter
 }
 
+// MaxLinkRetries is the largest --link-retries.
+const MaxLinkRetries = 255
+
 // prepared is everything Dial needs, checked before any I/O.
 type prepared struct {
 	target   line.Target
@@ -156,6 +159,9 @@ func prepare(cfg *config.ConnConfig) (*prepared, error) {
 	if err := CheckCommonAddress(cfg.CommonAddress, cfg.CASize); err != nil {
 		return nil, err
 	}
+	if cfg.LinkRetries < -1 || cfg.LinkRetries > MaxLinkRetries {
+		return nil, fmt.Errorf("invalid --link-retries %d: use 1-%d, 0 for the default (3) or -1 for none", cfg.LinkRetries, MaxLinkRetries)
+	}
 	loc, err := Location(cfg.TimeZone)
 	if err != nil {
 		return nil, err
@@ -174,7 +180,7 @@ func prepare(cfg *config.ConnConfig) (*prepared, error) {
 		RequestTimeout: timeout,
 	}
 	cc.Link.Timeout = time.Duration(cfg.LinkTimeout) * time.Millisecond
-	cc.Link.Retries = int(cfg.LinkRetries)
+	cc.Link.Retries = cfg.LinkRetries // go-iec60870-5 link.Config: 0 = 3, negative = none
 	return &prepared{target: t, settings: s, cfg: cc, timeout: timeout, profile: prof}, nil
 }
 

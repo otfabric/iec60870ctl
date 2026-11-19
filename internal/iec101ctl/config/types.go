@@ -32,7 +32,7 @@ type LinkConfig struct {
 	CASize         uint8  `env:"IEC101CTL_CA_SIZE" desc:"Octets of the common address: 1 or 2" flag:"ca-size"`
 	IOASize        uint8  `env:"IEC101CTL_IOA_SIZE" desc:"Octets of the information object address: 1, 2 or 3" flag:"ioa-size"`
 	LinkTimeout    uint32 `env:"IEC101CTL_LINK_TIMEOUT" desc:"Link layer: milliseconds to wait for the answer to a frame before it is repeated (0 = 1000)" flag:"link-timeout"`
-	LinkRetries    uint8  `env:"IEC101CTL_LINK_RETRIES" desc:"Link layer: repetitions of an unanswered frame (0 = 3)" flag:"link-retries"`
+	LinkRetries    int    `env:"IEC101CTL_LINK_RETRIES" desc:"Link layer: repetitions of an unanswered frame, -1-255 (0 = 3, -1 = none)" flag:"link-retries"`
 	Strict         bool   `env:"IEC101CTL_STRICT" desc:"Apply the IEC 60870-5-101 profile checks to every ASDU sent and received" flag:"strict"`
 	TimeZone       string `env:"IEC101CTL_TIMEZONE" desc:"Time zone of the time tags on the wire: utc, local or an IANA name such as Europe/Brussels (default utc)" flag:"timezone"`
 }

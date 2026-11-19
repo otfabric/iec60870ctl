@@ -83,6 +83,9 @@ func checkLinkAddr(a uint16, size int) error {
 	return nil
 }
 
+// MaxLinkRetries is the largest --link-retries.
+const MaxLinkRetries = 255
+
 // LinkParams resolves the link flags of cfg into the parameters of go-iec60870-5.
 func LinkParams(cfg config.LinkConfig) (Link, error) {
 	var l Link
@@ -103,6 +106,8 @@ func LinkParams(cfg config.LinkConfig) (Link, error) {
 		return l, fmt.Errorf("invalid --ca-size %d: use 1 or 2", cfg.CASize)
 	case cfg.IOASize < 1 || cfg.IOASize > 3:
 		return l, fmt.Errorf("invalid --ioa-size %d: use 1, 2 or 3", cfg.IOASize)
+	case cfg.LinkRetries < -1 || cfg.LinkRetries > MaxLinkRetries:
+		return l, fmt.Errorf("invalid --link-retries %d: use 1-%d, 0 for the default (3) or -1 for none", cfg.LinkRetries, MaxLinkRetries)
 	}
 	p.Link.FT12 = ft12.Params{AddrSize: int(cfg.LinkAddrSize)}
 	p.ASDU.CauseSize, p.ASDU.CommonAddrSize, p.ASDU.IOASize = int(cfg.CauseSize), int(cfg.CASize), int(cfg.IOASize)
@@ -111,7 +116,8 @@ func LinkParams(cfg config.LinkConfig) (Link, error) {
 		p.Link.Timeout = time.Duration(cfg.LinkTimeout) * time.Millisecond
 	}
 	if cfg.LinkRetries != 0 {
-		p.Link.Retries = int(cfg.LinkRetries)
+		// go-iec60870-5 link.Config: a negative number means no repetition.
+		p.Link.Retries = cfg.LinkRetries
 	}
 	p.Strict = cfg.Strict
 	loc, err := Location(cfg.TimeZone)

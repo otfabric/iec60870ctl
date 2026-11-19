@@ -81,6 +81,11 @@ func TestCompletion(t *testing.T) {
 			}
 		}
 	}
+	// --type completes the types of IEC 101 only: no IEC 104 commands with a time tag.
+	r0 := run(t, "__complete", "client", "monitor", "--type", "C_").want(t, 0)
+	if !strings.Contains(r0.stdout, "C_SC_NA_1") || strings.Contains(r0.stdout, "C_SC_TA_1") || strings.Contains(r0.stdout, "C_TS_TA_1") {
+		t.Errorf("client monitor --type completes:\n%s", r0.stdout)
+	}
 	// Flags without values of their own complete no file names; --config does.
 	r := run(t, "__complete", "client", "interrogate", "--url", "").want(t, 0)
 	if !strings.Contains(r.stdout, ":4") {
