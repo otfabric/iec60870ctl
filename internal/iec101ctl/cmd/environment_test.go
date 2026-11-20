@@ -5,6 +5,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/otfabric/iec60870ctl/internal/iec101ctl/stationtest"
 	"github.com/otfabric/iec60870ctl/internal/iec101ctl/types"
@@ -215,8 +216,15 @@ func TestStateChangesAreTakenOnlyFromTheCommandLine(t *testing.T) {
 			name: "set on the command line", env: map[string]string{"IEC101CTL_SET_DELAY": "1"},
 			args: []string{"delay", "--set", "120"},
 			check: func(t *testing.T, _ result, events func(string) []types.ServerEvent) {
-				if !hasDetail(events("delay"), "set to 120 ms") {
-					t.Errorf("delay events %+v, want 120 ms set", events("delay"))
+				// The delay is sent spontaneously (IEC 60870-5-101:2003 7.4.12): nothing at the
+				// application layer confirms it, so the command can end before the station
+				// has logged it.
+				deadline := time.Now().Add(5 * time.Second)
+				for !hasDetail(events("delay"), "set to 120 ms") {
+					if time.Now().After(deadline) {
+						t.Fatalf("delay events %+v, want 120 ms set", events("delay"))
+					}
+					time.Sleep(5 * time.Millisecond)
 				}
 			},
 		},

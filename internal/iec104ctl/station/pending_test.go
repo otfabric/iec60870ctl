@@ -3,6 +3,8 @@
 package station
 
 import (
+	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/otfabric/go-iec60870-5/asdu"
@@ -41,5 +43,22 @@ points:
 	}
 	if n := st.clearPendingEvents(); n != 0 {
 		t.Errorf("a second reset cleared %d", n)
+	}
+}
+
+// A redundancy group with an allow-list takes only TCP peers whose address it holds: an
+// address that is not TCP, or a TCP address without an IP, is in no list.
+func TestAllowsNonTCPAddresses(t *testing.T) {
+	p := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	for _, a := range []net.Addr{&net.UnixAddr{Name: "/tmp/x", Net: "unix"}, &net.TCPAddr{}} {
+		if allows(p, a) {
+			t.Errorf("%T %v allowed", a, a)
+		}
+	}
+	if !allows(p, &net.TCPAddr{IP: net.ParseIP("::ffff:10.1.2.3")}) {
+		t.Error("an IPv4-mapped address in the list refused")
+	}
+	if !allows(nil, &net.UnixAddr{Name: "/tmp/x", Net: "unix"}) {
+		t.Error("a group without a list refused an address")
 	}
 }

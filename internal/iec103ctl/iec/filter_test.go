@@ -3,6 +3,8 @@
 package iec
 
 import (
+	"context"
+	"io"
 	"testing"
 
 	"github.com/otfabric/go-iec60870-5/iec103"
@@ -133,5 +135,14 @@ func TestCheckWriteData(t *testing.T) {
 		if _, err := checkWrite(&c); err == nil {
 			t.Errorf("%+v accepted", c)
 		}
+	}
+}
+
+// A filter that does not parse ends Monitor before the line is opened.
+func TestMonitorRefusesAnInvalidFilter(t *testing.T) {
+	cfg := &config.MonitorConfig{Funs: "300"}
+	cfg.URL = "tcp://127.0.0.1:1"
+	if _, err := Monitor(context.Background(), cfg, io.Discard, func(*types.Message) error { return nil }); err == nil {
+		t.Fatal("--fun 300 was accepted")
 	}
 }

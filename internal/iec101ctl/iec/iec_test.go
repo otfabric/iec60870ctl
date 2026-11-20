@@ -401,3 +401,24 @@ func TestTypeNames101(t *testing.T) {
 		}
 	}
 }
+
+// Parameter refuses link flags and a parameter that cannot be sent, and reports a line that
+// cannot be opened, without sending anything.
+func TestParameterErrors(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.ParameterConfig{StationConfig: config.StationConfig{ConnConfig: config.ConnConfig{LinkConfig: config.DefaultLink(), URL: "tcp://127.0.0.1:1", Timeout: 500}, CommonAddr: 1},
+		Type: "float", IOA: 1, Value: "1", Qualifier: "threshold"}
+	cfg.IOASize = 9
+	if _, err := Parameter(ctx, cfg, nil); err == nil {
+		t.Error("--ioa-size 9 was accepted")
+	}
+	cfg.IOASize = 1
+	cfg.IOA = 300 // more than one octet holds
+	if _, err := Parameter(ctx, cfg, nil); err == nil {
+		t.Error("IOA 300 with one-octet addresses was accepted")
+	}
+	cfg.IOA = 1
+	if _, err := Parameter(ctx, cfg, nil); err == nil {
+		t.Error("a line that does not listen answered")
+	}
+}

@@ -5,6 +5,7 @@ package station
 import (
 	"context"
 	"errors"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -467,5 +468,49 @@ func TestDelayAfter(t *testing.T) {
 		if got := delayAfter(c.sent, c.reaction); got != c.want {
 			t.Errorf("delayAfter(%d, %s) = %d, want %d", c.sent, c.reaction, got, c.want)
 		}
+	}
+}
+
+// A parameter of measured value of an unknown kind (KPA, IEC 60870-5-101:2003 7.2.6.24) or
+// with a value that is not a finite number is refused negatively; one of each kind, scaled
+// and normalized too, is confirmed and logged.
+func TestStationParameterOfMeasuredValue(t *testing.T) {
+	r := newRig(t, testModel, config.ModeUnbalanced)
+	c := ctx(t)
+	for _, obj := range []asdu.InformationObject{
+		asdu.ParameterFloat{IOA: 502, Value: 1, Qualifier: 9},
+		asdu.ParameterFloat{IOA: 502, Value: float32(math.Inf(1)), Qualifier: asdu.ParameterThreshold},
+		asdu.ParameterFloat{IOA: 100, Value: 1, Qualifier: asdu.ParameterThreshold},
+	} {
+		if err := r.c.Send(c, asdu.New(asdu.CauseActivation, 5, obj)); err != nil {
+			t.Fatal(err)
+		}
+		if a := r.expect(t, asdu.P_ME_NC_1, asdu.CauseActivationCon); !a.Negative {
+			t.Errorf("%+v confirmed", obj)
+		}
+	}
+	for _, o := range []struct {
+		obj asdu.InformationObject
+		typ asdu.TypeID
+	}{
+		{asdu.ParameterNormalized{IOA: 500, Value: asdu.Normalized(8192), Qualifier: asdu.ParameterSmoothing}, asdu.P_ME_NA_1},
+		{asdu.ParameterScaled{IOA: 501, Value: 7, Qualifier: asdu.ParameterLowLimit}, asdu.P_ME_NB_1},
+		{asdu.ParameterFloat{IOA: 502, Value: 2.5, Qualifier: asdu.ParameterHighLimit}, asdu.P_ME_NC_1},
+	} {
+		if err := r.c.Send(c, asdu.New(asdu.CauseActivation, 5, o.obj)); err != nil {
+			t.Fatal(err)
+		}
+		if a := r.expect(t, o.typ, asdu.CauseActivationCon); a.Negative {
+			t.Errorf("%+v refused", o.obj)
+		}
+	}
+	var loaded []string
+	for _, e := range r.events() {
+		if e.Event == "parameter" && strings.HasPrefix(e.Detail, "loaded: ") {
+			loaded = append(loaded, e.Detail)
+		}
+	}
+	if len(loaded) != 3 {
+		t.Errorf("parameter events %v, want three loaded", loaded)
 	}
 }
