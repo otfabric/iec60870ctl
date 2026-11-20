@@ -107,6 +107,12 @@ func TestClientCommandsInEveryLinkMode(t *testing.T) {
 			if sc.Probed != 3 || sc.Found != 1 || sc.Stations[0].CommonAddr != 1 {
 				t.Fatalf("scan: %+v", sc)
 			}
+			// "sweep", the name iec104ctl uses for this method, is accepted as an alias.
+			var alias types.ScanResult
+			cli(t, st, "scan", "--method", "sweep", "--start", "1", "--end", "1", "--delay", "1", "--format", "json").want(t, 0).decode(t, &alias)
+			if alias.Method != "ca" || alias.Found != 1 {
+				t.Fatalf("scan --method sweep: %+v", alias)
+			}
 		})
 	}
 }
@@ -224,8 +230,9 @@ func TestClientInputErrors(t *testing.T) {
 		{"ping", "--method", "link-test"},
 		{"ping", "--interval", "0"},
 		{"ping", "--ca", "0"},
-		{"scan", "--method", "sweep"},
 		{"scan", "--method", "ca", "--start", "0"},
+		{"interrogate", "--link-retries", "-2"},
+		{"interrogate", "--link-retries", "256"},
 		{"scan", "--method", "link", "--end", "255"},
 		{"monitor", "--ca", "x"},
 		{"monitor", "--ioa", "1-"},

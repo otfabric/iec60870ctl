@@ -5,6 +5,7 @@ package station
 import (
 	"context"
 	"errors"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -271,8 +272,25 @@ func TestStationServices(t *testing.T) {
 			}
 			send(asdu.New(asdu.CauseActivation, 5, asdu.TestCommand{Time: asdu.Now()}))
 			r.expect(t, asdu.C_TS_TA_1, asdu.CauseUnknownType)
-			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 1, Qualifier: 1}))
-			r.expect(t, asdu.P_AC_NA_1, asdu.CauseUnknownType)
+			// The previously loaded parameters are activated at address 0 (IEC 60870-5-101:2003
+			// 7.2.6.25): at the address of a point the activation is refused, at an unknown
+			// address it is refused as such.
+			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 100, Qualifier: asdu.ActivateLoadedParameters}))
+			if a := r.expect(t, asdu.P_AC_NA_1, asdu.CauseActivationCon); !a.Negative {
+				t.Errorf("activation of the loaded parameters at address 100 confirmed: %v", a)
+			}
+			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 1, Qualifier: asdu.ActivateLoadedParameters}))
+			r.expect(t, asdu.P_AC_NA_1, asdu.CauseUnknownIOA)
+			send(asdu.New(asdu.CauseActivation, 5, asdu.ParameterActivation{IOA: 100, Qualifier: 9}))
+			if a := r.expect(t, asdu.P_AC_NA_1, asdu.CauseActivationCon); !a.Negative {
+				t.Errorf("activation with QPA 9 confirmed: %v", a)
+			}
+			send(asdu.New(asdu.CauseDeactivation, 5, asdu.ParameterActivation{IOA: 100, Qualifier: asdu.ActivateObjectParameter}))
+			if a := r.expect(t, asdu.P_AC_NA_1, asdu.CauseDeactivationCon); !a.Negative {
+				t.Errorf("deactivation confirmed: %v", a)
+			}
+			send(asdu.New(asdu.CauseSpontaneous, 5, asdu.ParameterFloat{IOA: 1, Value: 1, Qualifier: asdu.ParameterThreshold}))
+			r.expect(t, asdu.P_ME_NC_1, asdu.CauseUnknownCause)
 			send(asdu.New(asdu.CauseSpontaneous, 5, asdu.SingleCommand{IOA: 1000, Value: true}))
 			r.expect(t, asdu.C_SC_NA_1, asdu.CauseUnknownCause)
 			for _, a := range []*asdu.ASDU{
@@ -285,8 +303,10 @@ func TestStationServices(t *testing.T) {
 				send(a)
 				r.expect(t, a.Type, asdu.CauseDeactivationCon)
 			}
+			// "connected" is logged when the line is served and "link-up" from the link's
+			// state callback: either may come first.
 			ev := r.events()
-			if len(ev) < 20 || ev[0].Event != "connected" {
+			if len(ev) < 20 || (ev[0].Event != "connected" && ev[1].Event != "connected") {
 				t.Errorf("events: %+v", ev)
 			}
 		})
@@ -448,5 +468,49 @@ func TestDelayAfter(t *testing.T) {
 		if got := delayAfter(c.sent, c.reaction); got != c.want {
 			t.Errorf("delayAfter(%d, %s) = %d, want %d", c.sent, c.reaction, got, c.want)
 		}
+	}
+}
+
+// A parameter of measured value of an unknown kind (KPA, IEC 60870-5-101:2003 7.2.6.24) or
+// with a value that is not a finite number is refused negatively; one of each kind, scaled
+// and normalized too, is confirmed and logged.
+func TestStationParameterOfMeasuredValue(t *testing.T) {
+	r := newRig(t, testModel, config.ModeUnbalanced)
+	c := ctx(t)
+	for _, obj := range []asdu.InformationObject{
+		asdu.ParameterFloat{IOA: 502, Value: 1, Qualifier: 9},
+		asdu.ParameterFloat{IOA: 502, Value: float32(math.Inf(1)), Qualifier: asdu.ParameterThreshold},
+		asdu.ParameterFloat{IOA: 100, Value: 1, Qualifier: asdu.ParameterThreshold},
+	} {
+		if err := r.c.Send(c, asdu.New(asdu.CauseActivation, 5, obj)); err != nil {
+			t.Fatal(err)
+		}
+		if a := r.expect(t, asdu.P_ME_NC_1, asdu.CauseActivationCon); !a.Negative {
+			t.Errorf("%+v confirmed", obj)
+		}
+	}
+	for _, o := range []struct {
+		obj asdu.InformationObject
+		typ asdu.TypeID
+	}{
+		{asdu.ParameterNormalized{IOA: 500, Value: asdu.Normalized(8192), Qualifier: asdu.ParameterSmoothing}, asdu.P_ME_NA_1},
+		{asdu.ParameterScaled{IOA: 501, Value: 7, Qualifier: asdu.ParameterLowLimit}, asdu.P_ME_NB_1},
+		{asdu.ParameterFloat{IOA: 502, Value: 2.5, Qualifier: asdu.ParameterHighLimit}, asdu.P_ME_NC_1},
+	} {
+		if err := r.c.Send(c, asdu.New(asdu.CauseActivation, 5, o.obj)); err != nil {
+			t.Fatal(err)
+		}
+		if a := r.expect(t, o.typ, asdu.CauseActivationCon); a.Negative {
+			t.Errorf("%+v refused", o.obj)
+		}
+	}
+	var loaded []string
+	for _, e := range r.events() {
+		if e.Event == "parameter" && strings.HasPrefix(e.Detail, "loaded: ") {
+			loaded = append(loaded, e.Detail)
+		}
+	}
+	if len(loaded) != 3 {
+		t.Errorf("parameter events %v, want three loaded", loaded)
 	}
 }

@@ -45,6 +45,7 @@ A-Profile of IEC TS 60870-5-7) after STARTDT: a Station Association with --secur
 		newCommandCmd(),
 		newClockCmd(),
 		newResetCmd(),
+		newParameterCmd(),
 		newPingCmd(),
 		newScanCmd(),
 		newFileCmd(),

@@ -463,3 +463,22 @@ func (b *lockedBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+// --link-retries is -1 (none), 0 (the default) or 1-255; anything else is refused before
+// the line is opened.
+func TestValidateLinkRetries(t *testing.T) {
+	for _, r := range []int{-1, 0, 1, meter.MaxLinkRetries} {
+		c := config.Defaults()
+		c.URL, c.LinkRetries = "tcp://127.0.0.1:1", r
+		if err := meter.Validate(&c); err != nil {
+			t.Errorf("--link-retries %d: %v", r, err)
+		}
+	}
+	for _, r := range []int{-2, meter.MaxLinkRetries + 1} {
+		c := config.Defaults()
+		c.URL, c.LinkRetries = "tcp://127.0.0.1:1", r
+		if err := meter.Validate(&c); err == nil || !strings.Contains(err.Error(), "--link-retries") {
+			t.Errorf("--link-retries %d: %v", r, err)
+		}
+	}
+}

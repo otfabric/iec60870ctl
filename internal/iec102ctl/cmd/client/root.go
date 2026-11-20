@@ -221,7 +221,7 @@ unknown_record_address (16), unknown_type (14).`,
 `,
 	}
 	cfg := config.TotalsConfig{ConnConfig: config.Defaults(), Record: 11, Kind: "operational", First: 1, Last: 8, OutputFormat: string(format.FormatText)}
-	wire(cmd, &cfg, described("kind", meter.KindValues()))
+	wire(cmd, &cfg, described("kind", meter.KindValues()), enum("type", meter.ReadTypeNames()...))
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg.AddressRange = cfg.AddressRange || cmd.Flags().Changed("first") || cmd.Flags().Changed("last")
 		return run(cmd, &cfg.ConnConfig, cfg.OutputFormat, func() error { return meter.CheckTotals(&cfg) },
@@ -281,7 +281,7 @@ are not used, and a notice on stderr names each one that is set.`,
 `,
 	}
 	cfg := config.RequestConfig{ConnConfig: config.Defaults(), Cause: "activation", Objects: -1, Until: meter.UntilAuto, OutputFormat: string(format.FormatText)}
-	wire(cmd, &cfg, described("until", meter.UntilValues()), enum("cause", "activation", "request", "deactivation"))
+	wire(cmd, &cfg, described("until", meter.UntilValues()), enum("cause", "activation", "request", "deactivation"), enum("type", meter.TypeNames()...))
 	cli.MustMarkFlagRequired(cmd, "type")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		envflag.CommandLineOnly(cmd, "cause", "record", "data", "objects")

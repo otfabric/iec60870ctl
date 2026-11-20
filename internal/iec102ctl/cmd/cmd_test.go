@@ -214,6 +214,32 @@ func TestConnectionErrorsExitCodes(t *testing.T) {
 	run(t, "client", "info", "--url", st.URL(), "--link-address", "9", "--link-timeout", "100", "--link-retries", "1").want(t, 5).errHas(t, "link address 9")
 	r := run(t, "client", "info", "--url", st.URL(), "--link-address", "9", "--link-timeout", "100", "--link-retries", "1", "--debug")
 	r.want(t, 5).errHas(t, "debug:", "cause:")
+	// -1: the request is sent once and not repeated; -2 is refused before the line opens.
+	run(t, "client", "info", "--url", st.URL(), "--link-address", "9", "--link-timeout", "100", "--link-retries", "-1").want(t, 5).errHas(t, "after 1 attempt(s)")
+	run(t, "client", "info", "--url", st.URL(), "--link-address", "9", "--link-timeout", "100").want(t, 5).errHas(t, "after 4 attempt(s)")
+	run(t, "client", "info", "--url", st.URL(), "--link-retries", "-2").want(t, 3).errHas(t, "--link-retries")
+	run(t, "client", "info", "--url", st.URL(), "--link-retries", "256").want(t, 3)
+}
+
+// --ca is --common-address, as in iec101ctl and iec104ctl.
+func TestCommonAddressAlias(t *testing.T) {
+	st := stationtest.Start(t)
+	// The meter has measuring point 1 only: point 2 is refused with either name.
+	run(t, "client", "info", "--url", st.URL(), "--ca", "2").want(t, 6).errHas(t, "measuring point 2")
+	run(t, "client", "info", "--url", st.URL(), "--common-address", "2").want(t, 6).errHas(t, "measuring point 2")
+	run(t, "client", "info", "--url", st.URL(), "--ca", "1").want(t, 0)
+	run(t, "client", "info", "--url", st.URL(), "--ca", "70000").want(t, 2)
+}
+
+func TestTypeCompletion(t *testing.T) {
+	r := run(t, "__complete", "client", "totals", "--type", "").want(t, 0)
+	if !strings.Contains(r.stdout, "C_CI_NA_2") || !strings.Contains(r.stdout, "C_CI_NU_2") || strings.Contains(r.stdout, "C_RD_NA_2") {
+		t.Errorf("client totals --type completes:\n%s", r.stdout)
+	}
+	r = run(t, "__complete", "client", "request", "--type", "C_").want(t, 0)
+	if !strings.Contains(r.stdout, "C_RD_NA_2") || !strings.Contains(r.stdout, "C_CI_NA_2") {
+		t.Errorf("client request --type completes:\n%s", r.stdout)
+	}
 }
 
 func TestGenerateConfig(t *testing.T) {

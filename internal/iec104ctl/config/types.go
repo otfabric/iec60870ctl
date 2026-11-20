@@ -64,7 +64,10 @@ type ConnConfig struct {
 	Port       uint16 `env:"IEC104CTL_PORT" desc:"Station TCP port (used when --url is not set)" flag:"port"`
 	Originator uint8  `env:"IEC104CTL_ORIGINATOR" desc:"Originator address sent with every request (0 = not used)" flag:"originator"`
 	Timeout    uint32 `env:"IEC104CTL_TIMEOUT" desc:"Timeout in milliseconds for connecting and for each request (0 = 10000)" flag:"timeout"`
-	Debug      bool   // set from global --debug (root persistent flag)
+	// Standby are further URLs of the same station: with them the connections form a
+	// redundancy group (IEC 60870-5-104 clause 10, redundant connections).
+	Standby []string `env:"IEC104CTL_STANDBY_URL" desc:"Further URLs of the same station (another network path or front end), tcp:// or tls:// as the station: the connections form a redundancy group with data transfer on a single connection, and a standby takes over when it is lost" flag:"standby-url"`
+	Debug   bool     // set from global --debug (root persistent flag)
 	// CommonAddrHint is the common address of the station a command addresses, when it
 	// addresses one; it fills the data unit identifier of the security messages.
 	CommonAddrHint uint16
@@ -174,6 +177,17 @@ type ResetConfig struct {
 	OutputFormat string `env:"IEC104CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 
+// ParameterConfig drives `client parameter`. What it changes at the station is taken only
+// from the command line: none of its own flags has an environment variable.
+type ParameterConfig struct {
+	StationConfig
+	Type         string `desc:"Parameter type: normalized (P_ME_NA_1), scaled (P_ME_NB_1), float (P_ME_NC_1) or activation (P_AC_NA_1), or the type name" flag:"type"`
+	IOA          uint32 `desc:"Information object address: the measured value the parameter belongs to (0 for an activation of the previously loaded parameters)" flag:"ioa"`
+	Value        string `desc:"Value of a parameter of measured value: -1 up to 1 (normalized), -32768 to 32767 (scaled) or a number (float); none for an activation" flag:"value"`
+	Qualifier    string `desc:"Kind of parameter of measured value: threshold, smoothing, low-limit or high-limit; for an activation: loaded, object or cyclic" flag:"qualifier"`
+	OutputFormat string `env:"IEC104CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
+}
+
 // PingConfig drives `client ping`.
 type PingConfig struct {
 	StationConfig
@@ -244,17 +258,20 @@ const DefaultMaxSessions = 16
 type ServerConfig struct {
 	LinkConfig
 	ServerSecurityConfig
-	Config       string   `env:"IEC104CTL_CONFIG" desc:"Station model file (YAML or JSON); without it a built-in demo station is served" flag:"config"`
-	Listen       string   `env:"IEC104CTL_LISTEN" desc:"Address to listen on" flag:"listen"`
-	Port         uint16   `env:"IEC104CTL_PORT" desc:"TCP port to listen on (0 = 2404, or 19998 with TLS)" flag:"port"`
-	Cert         string   `env:"IEC104CTL_TLS_CERT" desc:"PEM file with the server certificate; with --tls-key it makes the server a TLS server" flag:"tls-cert"`
-	Key          string   `env:"IEC104CTL_TLS_KEY" desc:"PEM file with the private key of --tls-cert" flag:"tls-key"`
-	ClientCA     string   `env:"IEC104CTL_TLS_CLIENT_CA" desc:"PEM file with the CA certificates clients must present a certificate of (mutual TLS)" flag:"tls-client-ca"`
-	Allow        []string `env:"IEC104CTL_ALLOW" desc:"Only accept clients from these addresses or CIDR prefixes (default: any)" flag:"allow"`
-	MaxSessions  uint16   `env:"IEC104CTL_MAX_SESSIONS" desc:"Maximum number of simultaneous connections; a further one is closed at once (0 = no limit)" flag:"max-sessions"`
-	Duration     uint32   `env:"IEC104CTL_DURATION" desc:"Stop after this many seconds (0 = until interrupted)" flag:"duration"`
-	OutputFormat string   `env:"IEC104CTL_FORMAT" desc:"Format of the event log on stdout: text, json, or table" flag:"format"`
-	Debug        bool     // set from global --debug (root persistent flag)
+	Config      string   `env:"IEC104CTL_CONFIG" desc:"Station model file (YAML or JSON); without it a built-in demo station is served" flag:"config"`
+	Listen      string   `env:"IEC104CTL_LISTEN" desc:"Address to listen on" flag:"listen"`
+	Port        uint16   `env:"IEC104CTL_PORT" desc:"TCP port to listen on (0 = 2404, or 19998 with TLS)" flag:"port"`
+	Cert        string   `env:"IEC104CTL_TLS_CERT" desc:"PEM file with the server certificate; with --tls-key it makes the server a TLS server" flag:"tls-cert"`
+	Key         string   `env:"IEC104CTL_TLS_KEY" desc:"PEM file with the private key of --tls-cert" flag:"tls-key"`
+	ClientCA    string   `env:"IEC104CTL_TLS_CLIENT_CA" desc:"PEM file with the CA certificates clients must present a certificate of (mutual TLS)" flag:"tls-client-ca"`
+	Allow       []string `env:"IEC104CTL_ALLOW" desc:"Only accept clients from these addresses or CIDR prefixes (default: any)" flag:"allow"`
+	MaxSessions uint16   `env:"IEC104CTL_MAX_SESSIONS" desc:"Maximum number of simultaneous connections; a further one is closed at once (0 = no limit)" flag:"max-sessions"`
+	// RedundancyGroups and EventQueue override the redundancy section of the model.
+	RedundancyGroups []string `env:"IEC104CTL_REDUNDANCY_GROUP" desc:"Redundancy group: name=address, name=CIDR prefix or name=* (every other address); repeat the flag for each address and group, in order; replaces the groups of the model" flag:"redundancy-group"`
+	EventQueue       uint32   `env:"IEC104CTL_EVENT_QUEUE" desc:"Events each redundancy group buffers until a controlling station acknowledges them; when full the oldest is dropped (0 = the model's, else 1024)" flag:"event-queue"`
+	Duration         uint32   `env:"IEC104CTL_DURATION" desc:"Stop after this many seconds (0 = until interrupted)" flag:"duration"`
+	OutputFormat     string   `env:"IEC104CTL_FORMAT" desc:"Format of the event log on stdout: text, json, or table" flag:"format"`
+	Debug            bool     // set from global --debug (root persistent flag)
 }
 
 // GenerateConfigConfig drives `server generate-config`.

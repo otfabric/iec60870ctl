@@ -20,17 +20,25 @@ var ReconnectDelay = time.Second
 
 // CheckMonitor validates `client monitor`.
 func CheckMonitor(cfg *config.MonitorConfig) error {
-	_, err := CheckConn(&cfg.ConnConfig)
+	if _, err := CheckConn(&cfg.ConnConfig); err != nil {
+		return err
+	}
+	_, err := ParseMonitorFilter(cfg)
 	return err
 }
 
 // Monitor polls the equipment and hands every ASDU it sends to emit, until ctx ends,
 // --duration passed or --count messages were emitted. A lost line is opened again unless
 // --no-reconnect is set; then it ends with a connection error. State changes of the link
-// go to stderr.
+// go to stderr. Only the messages that pass --type, --fun, --inf and --cause are emitted
+// and counted for --count.
 func Monitor(ctx context.Context, cfg *config.MonitorConfig, stderr io.Writer, emit func(*types.Message) error) (sum types.MonitorSummary, err error) {
 	if t, err := CheckConn(&cfg.ConnConfig); err == nil {
 		sum.Target = t.String()
+	}
+	filter, err := ParseMonitorFilter(cfg)
+	if err != nil {
+		return sum, errs.WrapValidation(err)
 	}
 	start := time.Now()
 	defer func() { sum.DurationMs = since(start) }()
@@ -50,7 +58,10 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, stderr io.Writer, e
 		done := make(chan struct{})
 		handler := func(a *iec103.ASDU) {
 			m := MessageOf(a)
-			m.Received = time.Now().Format(time.RFC3339Nano)
+			if !filter.Match(&m) {
+				return
+			}
+			m.Received = time.Now().UTC().Format(FullTime)
 			select {
 			case msgs <- m:
 			case <-done:

@@ -5,6 +5,52 @@ tools share one version; each section is headed exactly `## vX.Y.Z` and ends wit
 `---` ([docs/RELEASING.md](docs/RELEASING.md)). The releases of iec104ctl from its own
 repository are in [docs/iec104ctl/HISTORY.md](docs/iec104ctl/HISTORY.md).
 
+## v0.13.0
+
+**Date:** 2026-11-20
+**Previous release:** v0.12.2
+
+Adds `client parameter` to iec101ctl and iec104ctl, clears the queued time-tagged events of the iec104ctl station on a reset of pending events, writes the errors found before a command runs as JSON when JSON was asked for, adds redundancy groups to iec104ctl, monitor filters, multi-set generic writes and `client types` to iec103ctl, writes the times of iec103ctl in UTC, and makes the link flags and completions of the serial tools consistent. Built on go-iec60870-5 v0.10.0 and go-serial v0.6.0.
+
+### Breaking
+
+- **iec103ctl: the times the tool writes are RFC 3339 in UTC with milliseconds** (`2026-11-20T09:15:23.307Z`), as in iec101ctl and iec104ctl: `received` of `client monitor`, `timestamp` of the `server start` events, and `value` of its `clock-sync` event. Before, `received` and `timestamp` were local time with nanoseconds and the `clock-sync` value was in the device's time zone with nanoseconds. A script that parsed them as RFC 3339 keeps working; one that compared them as text against local times must convert. The time tags the device sends, and `sent` and `device_time` of `client clock`, stay in `--timezone`; CP32Time2a tags (`HH:MM:SS.mmm`) carry no date and stay as they are.
+- iec103ctl `client generic write`: `--gin`, `--type` and `--value` are no longer marked as required flags, because `--data` replaces them. Without `--data`, leaving one off still exits `2` (usage), but help and shell completion no longer show them as required.
+
+### Changed
+
+- **All four tools: an error found before the command runs is written as JSON** when the command line has `--format json` (or `--format=json`) or `<TOOL>_FORMAT=json` is set: an unknown flag, a missing required flag, a flag value that does not parse (exit `2`), and an environment variable that does not parse (exit `3`). Before, these were one `error:` line on stderr whatever the format, against what [docs/json-output.md](docs/json-output.md) promised. The exit codes are unchanged; a script that read such an error from stderr with `--format json` reads one `{"error": …}` object on stdout now.
+- Built on go-iec60870-5 v0.10.0 (was v0.9.0) and go-serial v0.6.0 (was v0.5.0) (go-iec60870-5 RELEASE.md, v0.10.0; go-serial RELEASE.md, v0.6.0). docs/iec102ctl/LIMITATIONS.md and docs/iec103ctl/LIMITATIONS.md name go-iec60870-5 v0.10.0.
+
+### Added
+
+- iec101ctl and iec104ctl: **`client parameter`** (alias `param`) loads a parameter of measured value, `P_ME_NA_1`, `P_ME_NB_1` or `P_ME_NC_1` (`--qualifier threshold`, `smoothing`, `low-limit` or `high-limit`), or sends a parameter activation, `P_AC_NA_1` (`--qualifier loaded` at `--ioa 0`, `object` or `cyclic`), and waits for the activation confirmation (IEC 60870-5-104:2000 7.9; IEC 60870-5-101:2003 7.2.6.24, 7.2.6.25, 7.4.9, 7.4.10). It changes the station: everything is validated before anything is sent (exit `3`), it is sent once, and a refusal exits `6`. `--type`, `--ioa`, `--value` and `--qualifier` have no environment variable. JSON: `target`, `ca`, `ioa`, `type`, `value` (omitted for an activation), `qualifier`, `rtt_ms` ([docs/iec104ctl/json-output.md](docs/iec104ctl/json-output.md)).
+- iec101ctl and iec104ctl `server start`: the simulated station confirms a parameter of measured value for a measured value of its model, and a parameter activation, with a new `parameter` event (`detail` such as `loaded: threshold` or `activated: object parameter`). A parameter for another object, an unknown address or kind, a non-finite value and a cause other than activation are refused. The station keeps no parameters and does not apply them (LIMITATIONS.md). Before, it answered these types with "unknown type identification".
+- iec104ctl `server start`: a reset process command with the qualifier `events` (QRP 2, reset of pending information with time tag, IEC 60870-5-101:2003 7.2.6.27) removes the queued events that carry a time tag; the `reset` event has the `detail` `pending events: N with time tag cleared`. Before, the events stayed queued and reached the next controlling station. The iec101ctl station already cleared its queue.
+- iec101ctl and iec102ctl: **`--link-retries -1`** sends an unanswered frame once and does not repeat it (go-iec60870-5 link.Config). `0` stays the default, 3. A value outside -1 to 255 exits `3` before the line is opened; before, a negative value did not parse (exit `2`).
+- iec102ctl: `--ca` is accepted for `--common-address`, the name iec101ctl and iec104ctl use. Shell completion of `--type` for `client totals` (the reads of integrated totals `C_CI_NA_2` .. `C_CI_NU_2`) and `client request` (every type the tool knows by name).
+- iec104ctl `client scan --method ca` and iec101ctl `client scan --method sweep`: each tool accepts the other's name for one general interrogation per common address. The result reports the tool's own name (`sweep`, `ca`).
+
+- iec103ctl `client monitor`: filters `--type` (numbers or names), `--fun`, `--inf` and `--cause` (numbers or names), each a list or range (`--fun 160,176 --inf 64-71`), with the variables `IEC103CTL_MONITOR_TYPES`, `IEC103CTL_MONITOR_FUN`, `IEC103CTL_MONITOR_INF` and `IEC103CTL_MONITOR_CAUSE`. `--count` counts the messages shown.
+- iec103ctl `client generic write --data GIN[:KOD]=TYPE[/SIZE]:VALUE`, repeatable: up to 64 data sets in one write, in as many ASDUs 10 as they need, write entry (INF 248) and the last with write with execution (INF 250), for the device to activate together (IEC 60870-5-103:1997 7.4.8.6.3, as go-iec60870-5 implements it). Command line only; with `--gin`, `--type`, `--size` or `--value` on the command line it exits `3`.
+- iec103ctl `client types`: the ASDU types of IEC 60870-5-103 the tool knows (`count`, `types`: `id`, `name`, `description`, `direction` `monitor`, `control` or `both`), with `--direction`; `--type` of `client monitor` completes to them.
+- iec103ctl: `--ca` is accepted for `--common-address` and `--link-retries` for `--retries`, the names of the other tools; `--retries -1` is none, as `0`, and a value outside -1 to 10 exits `3`.
+
+- iec104ctl client: **`--standby-url`** (`IEC104CTL_STANDBY_URL`), repeatable or comma-separated, up to 8 further addresses of the same station: with the station's URL they form a redundancy group (IEC 60870-5-104:2000 clause 10, go-iec60870-5 `client.Group`). A one-shot command runs on the connection with data transfer started, which the result's `target` names, and is never sent again on another connection. `client monitor` follows a switchover (`monitor: switchover: data transfer on <url>` on stderr, "N switchovers" in the summary), runs `--interrogate` on the connection that takes over, and with `--no-reconnect` exits `4` when no connection of the group is left. Another scheme, a duplicate address or more than 8 URLs exit `3` before anything is sent. The group starts data transfer on the first connection established, not preferably on `--url` (LIMITATIONS.md).
+- iec104ctl `server start`: **`--redundancy-group name=address|prefix|*`** (`IEC104CTL_REDUNDANCY_GROUP`, repeatable) and **`--event-queue`** (`IEC104CTL_EVENT_QUEUE`, 1024 by default, at most 65536), and the model section `redundancy: {event_queue, groups: [{name, allow}]}` ([docs/iec104ctl/server-config.md](docs/iec104ctl/server-config.md)). Each group has its own event queue; a STARTDT on another connection of the group takes over from the started one. A full queue drops its oldest event, the only policy of go-iec60870-5. A connection no group allows is refused with a `refused` event; the connection events carry a new JSON field `group`, omitted without groups. Without the new flags or section nothing changes.
+
+### Fixed
+
+- iec101ctl tests: `TestStationServices` no longer fails when the station logs `link-up` before `connected`; the two come from different goroutines (seen under `-race`).
+- iec101ctl: shell completion of `--type` (`client interrogate`, `client monitor`) offers only the types IEC 60870-5-101 defines; before, it also offered IEC 104 types such as `C_SC_TA_1` and `C_TS_TA_1`.
+
+### Documentation
+
+- [docs/exitcodes.md](docs/exitcodes.md) lists the partial exit `7` of iec102ctl (an REE session whose logout was not confirmed) and of iec103ctl (`client generic read` answered with cause 43), and `client parameter` among the commands that change a station.
+- The iec101ctl and iec104ctl JSON references say that `qualifier` of `client command` is a name for single, double and step commands and the number QL for set points.
+
+---
+
 ## v0.12.2
 
 **Date:** 2026-11-16

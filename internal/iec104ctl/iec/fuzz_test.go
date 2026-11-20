@@ -253,3 +253,38 @@ func FuzzParseSecurityNames(f *testing.F) {
 		}
 	})
 }
+
+// --type, --value, --qualifier and --ioa of client parameter: what is accepted is a
+// parameter or an activation of the type asked for, at --ioa, that encodes.
+func FuzzParseParameter(f *testing.F) {
+	for _, c := range [][3]string{
+		{"float", "0.5", "threshold"}, {"scaled", "-32768", "high-limit"}, {"normalized", "0.99999", "low-limit"},
+		{"P_ME_NC_1", "3.4e38", "smoothing"}, {"float", "NaN", "threshold"}, {"scaled", "1.5", "threshold"},
+		{"activation", "", "object"}, {"P_AC_NA_1", "", "loaded"}, {"activation", "1", "cyclic"}, {"percent", "1", "threshold"},
+	} {
+		f.Add(c[0], c[1], c[2], uint32(1000))
+		f.Add(c[0], c[1], c[2], uint32(0))
+	}
+	f.Fuzz(func(t *testing.T, typ, value, qualifier string, ioa uint32) {
+		spec, err := parseParameter(&config.ParameterConfig{Type: typ, Value: value, Qualifier: qualifier, IOA: ioa})
+		if err != nil {
+			return
+		}
+		if ioa > MaxIOA {
+			t.Fatalf("parameter at IOA %d accepted", ioa)
+		}
+		if spec.obj.Address() != asdu.IOA(ioa) {
+			t.Fatalf("%s %q: object at %d, want %d", typ, value, spec.obj.Address(), ioa)
+		}
+		a := asdu.New(asdu.CauseActivation, 1, spec.obj)
+		if a.Type != spec.typ || !a.Type.IsParameter() {
+			t.Fatalf("%s %q: built %s, want %s", typ, value, a.Type, spec.typ)
+		}
+		if (spec.value == nil) != (a.Type == asdu.P_AC_NA_1) {
+			t.Fatalf("%s %q: value %v for %s", typ, value, spec.value, a.Type)
+		}
+		if _, err := a.Encode(asdu.IEC104); err != nil {
+			t.Fatalf("%s %q %q: the parameter does not encode: %v", typ, value, qualifier, err)
+		}
+	})
+}

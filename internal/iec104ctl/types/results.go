@@ -200,6 +200,45 @@ func (r *ConfirmedResult) TableRows() [][]string {
 	return [][]string{{strconv.Itoa(int(r.CommonAddr)), r.Request, detail, "confirmed", fmt.Sprintf("%.1f", r.RTTMs)}}
 }
 
+// ParameterResult is the result of `client parameter`: a parameter of measured value
+// loaded, or parameters activated, and confirmed by the station.
+type ParameterResult struct {
+	Target     string `json:"target"`
+	CommonAddr uint16 `json:"ca"`
+	IOA        uint32 `json:"ioa"`
+	// Type is the type identification sent: P_ME_NA_1, P_ME_NB_1, P_ME_NC_1 or P_AC_NA_1.
+	Type string `json:"type"`
+	// Value is the value of a parameter of measured value as sent (normalized values
+	// rounded to the 16-bit wire form); omitted for an activation.
+	Value any `json:"value,omitempty"`
+	// Qualifier is the kind of parameter (threshold, smoothing, low-limit, high-limit) or
+	// what an activation activates (loaded, object, cyclic).
+	Qualifier string  `json:"qualifier"`
+	RTTMs     float64 `json:"rtt_ms"`
+}
+
+// MarshalTextOutput implements format.TextMarshaler.
+func (r *ParameterResult) MarshalTextOutput() (string, error) {
+	if r.Value == nil {
+		return fmt.Sprintf("Parameter activation (%s) of IOA %d at station %d of %s confirmed in %.1f ms", r.Qualifier, r.IOA, r.CommonAddr, r.Target, r.RTTMs), nil
+	}
+	return fmt.Sprintf("Parameter %s = %v (%s) of IOA %d at station %d of %s confirmed in %.1f ms", r.Qualifier, r.Value, r.Type, r.IOA, r.CommonAddr, r.Target, r.RTTMs), nil
+}
+
+// TableHeaders implements format.TableMarshaler.
+func (r *ParameterResult) TableHeaders() []string {
+	return []string{"CA", "IOA", "TYPE", "QUALIFIER", "VALUE", "RESULT", "RTT_MS"}
+}
+
+// TableRows implements format.TableMarshaler.
+func (r *ParameterResult) TableRows() [][]string {
+	value := ""
+	if r.Value != nil {
+		value = fmt.Sprint(r.Value)
+	}
+	return [][]string{{strconv.Itoa(int(r.CommonAddr)), strconv.FormatUint(uint64(r.IOA), 10), r.Type, r.Qualifier, value, "confirmed", fmt.Sprintf("%.1f", r.RTTMs)}}
+}
+
 // PingSample is one test of `client ping`, written as it completes.
 type PingSample struct {
 	Seq       uint32     `json:"seq"`
@@ -496,7 +535,7 @@ func (r *DiscoverResult) TableRows() [][]string {
 type ServerEvent struct {
 	Timestamp string `json:"timestamp"`
 	// Event is "listening", "connected", "started", "stopped", "disconnected", "interrogation",
-	// "counter-interrogation", "read", "command", "clock", "reset", "test", "file-sent",
+	// "counter-interrogation", "read", "command", "parameter", "clock", "reset", "test", "file-sent",
 	// "file-received", "directory", "refused", "secured", "security-refused" or "stopping".
 	Event  string `json:"event"`
 	Remote string `json:"remote,omitempty"`
@@ -508,7 +547,10 @@ type ServerEvent struct {
 	// NonFinite names a value JSON has no number for, "NaN", "+Inf" or "-Inf", in place of
 	// Value (a set point that is not a finite number). Omitted for every other value.
 	NonFinite string `json:"non_finite,omitempty"`
-	Detail    string `json:"detail,omitempty"`
+	// Group is the redundancy group of the connection, on the connection events, when the
+	// station declares redundancy groups. Omitted otherwise.
+	Group  string `json:"group,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // valueText is the value of the event for text and table output, "" when it has none.

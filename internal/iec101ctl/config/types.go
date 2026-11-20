@@ -32,7 +32,7 @@ type LinkConfig struct {
 	CASize         uint8  `env:"IEC101CTL_CA_SIZE" desc:"Octets of the common address: 1 or 2" flag:"ca-size"`
 	IOASize        uint8  `env:"IEC101CTL_IOA_SIZE" desc:"Octets of the information object address: 1, 2 or 3" flag:"ioa-size"`
 	LinkTimeout    uint32 `env:"IEC101CTL_LINK_TIMEOUT" desc:"Link layer: milliseconds to wait for the answer to a frame before it is repeated (0 = 1000)" flag:"link-timeout"`
-	LinkRetries    uint8  `env:"IEC101CTL_LINK_RETRIES" desc:"Link layer: repetitions of an unanswered frame (0 = 3)" flag:"link-retries"`
+	LinkRetries    int    `env:"IEC101CTL_LINK_RETRIES" desc:"Link layer: repetitions of an unanswered frame, -1-255 (0 = 3, -1 = none)" flag:"link-retries"`
 	Strict         bool   `env:"IEC101CTL_STRICT" desc:"Apply the IEC 60870-5-101 profile checks to every ASDU sent and received" flag:"strict"`
 	TimeZone       string `env:"IEC101CTL_TIMEZONE" desc:"Time zone of the time tags on the wire: utc, local or an IANA name such as Europe/Brussels (default utc)" flag:"timezone"`
 }
@@ -116,6 +116,17 @@ type CommandConfig struct {
 type ClockConfig struct {
 	StationConfig
 	Time         string `env:"IEC101CTL_TIME" desc:"Time to set: now, or an RFC 3339 time such as 2026-01-31T12:00:00Z" flag:"time"`
+	OutputFormat string `env:"IEC101CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
+}
+
+// ParameterConfig drives `client parameter`. What it changes at the station is taken only
+// from the command line: none of its own flags has an environment variable.
+type ParameterConfig struct {
+	StationConfig
+	Type         string `desc:"Parameter type: normalized (P_ME_NA_1), scaled (P_ME_NB_1), float (P_ME_NC_1) or activation (P_AC_NA_1), or the type name" flag:"type"`
+	IOA          uint32 `desc:"Information object address: the measured value the parameter belongs to (0 for an activation of the previously loaded parameters)" flag:"ioa"`
+	Value        string `desc:"Value of a parameter of measured value: -1 up to 1 (normalized), -32768 to 32767 (scaled) or a number (float); none for an activation" flag:"value"`
+	Qualifier    string `desc:"Kind of parameter of measured value: threshold, smoothing, low-limit or high-limit; for an activation: loaded, object or cyclic" flag:"qualifier"`
 	OutputFormat string `env:"IEC101CTL_FORMAT" desc:"Output format: text, json, or table" flag:"format"`
 }
 

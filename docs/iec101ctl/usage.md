@@ -45,7 +45,7 @@ Every client command opens the line, brings up the link (request status of link,
 | `--remote-link-address` | Balanced only: the link address of the controlling station (default: `--link-address`) |
 | `--link-address-size` | Octets of the link address field: 1 (default) or 2; 0 (no address) in balanced mode only |
 | `--cot-size`, `--ca-size`, `--ioa-size` | Octets of the cause of transmission (1 or 2), the common address (1 or 2) and the information object address (1, 2 or 3). Defaults 1, 1 and 2 |
-| `--link-timeout`, `--link-retries` | How long the link layer waits for the answer to a frame before it repeats it (1000 ms) and how often (3). On a slow line raise the time-out: IEC 60870-5-101 6.2.2 gives about 2.25 s at 1200 bit/s |
+| `--link-timeout`, `--link-retries` | How long the link layer waits for the answer to a frame before it repeats it (1000 ms) and how often (3; `--link-retries -1`: never, the frame is sent once). On a slow line raise the time-out: IEC 60870-5-101 6.2.2 gives about 2.25 s at 1200 bit/s |
 | `--poll-interval` | Unbalanced: the pause between class 2 polls when the station has nothing to send (100 ms) |
 | `--strict` | Apply the IEC 60870-5-101 profile checks of go-iec60870-5 to every ASDU sent and received |
 | `--timeout` | Bringing up the link and each request (10 s). A TCP line that closes during the link start-up (a terminal server still serving the previous connection) is opened again until the timeout |
@@ -98,6 +98,15 @@ Clock synchronization, C_CS_NA_1, with `--time` (now) in `--timezone` (UTC). A s
 
 Reset process, C_RP_NA_1: `--qualifier process` (general reset) or `events` (reset of pending information with time tag).
 
+### `client parameter`
+
+A parameter of measured value or a parameter activation (IEC 60870-5-101:2003 7.2.6.24, 7.2.6.25, 7.4.9, 7.4.10), confirmed by the station: `--type normalized|scaled|float|activation` (or the type name, such as `P_ME_NC_1`), `--ioa`, `--value` (not for `activation`) and `--qualifier`: `threshold`, `smoothing`, `low-limit` or `high-limit`, or for an activation `loaded` (at `--ioa 0`), `object` or `cyclic`. **This changes the station**: a threshold or a limit decides which changes of a measured value it reports. Everything is validated before anything is sent, the parameter is sent once, and a refusal exits 6. The four flags are taken only from the command line. Alias `param`.
+
+```console
+iec101ctl client parameter --url tcp://10.0.0.5:2401 --type float --ioa 3001 --value 0.5 --qualifier threshold
+iec101ctl client parameter --url tcp://10.0.0.5:2401 --type activation --ioa 3001 --qualifier object
+```
+
 ### `client delay`
 
 The delay acquisition procedure of IEC 60870-5-101 7.4.12, C_CD_NA_1: without `--set` it measures the transmission delay; `--set auto` measures it and sends it to the station; `--set <ms>` sends that many milliseconds without measuring.
@@ -125,7 +134,7 @@ iec101ctl client ping --url serial:///dev/ttyUSB0 --method link-status --link-ad
 
 ### `client scan`
 
-Find the stations on a line: `--method broadcast` (one general interrogation to the broadcast common address, default), `ca` (one interrogation per common address from `--start` to `--end`) or `link` (request status of link per link address, unbalanced: a multidrop line). `--delay` pauses that many milliseconds between the requests of a sweep.
+Find the stations on a line: `--method broadcast` (one general interrogation to the broadcast common address, default), `ca` (one interrogation per common address from `--start` to `--end`) or `link` (request status of link per link address, unbalanced: a multidrop line). `sweep`, the name iec104ctl gives the `ca` method, is accepted for `ca`; the result reports `ca`. `--delay` pauses that many milliseconds between the requests of a sweep.
 
 ```console
 iec101ctl client scan --url serial:///dev/ttyUSB0 --method link --start 1 --end 30 --link-timeout 300

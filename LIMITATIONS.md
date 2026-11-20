@@ -33,7 +33,14 @@ go-iec60870-5's ([its LIMITATIONS.md](https://github.com/otfabric/go-iec60870-5/
   injected delay for this reason.
 - A serial line has one controlling station: `server start` of the serial tools serves one
   connection at a time.
+- The simulated stations of iec101ctl and iec104ctl confirm a parameter of measured value
+  and a parameter activation for a measured value of their model, but keep no parameters and
+  do not apply them: a threshold does not change which changes they report.
 - iec104ctl only: TLS, IEC 62351-5, file transfer and redundancy-related options; the serial
   tools have none of them.
+- iec104ctl `--standby-url`: data transfer starts on the connection that is established
+  first, not by preference on the station URL, and a path that returns does not take data
+  transfer back (go-iec60870-5 `client.Group`). `server start` drops the oldest event when a
+  group's queue is full; go-iec60870-5 has no other overflow policy.
 - go-iec60870-5 applies the request time-out (`--timeout`) to every request of a command;
   it is not a bound on a whole command that sends many requests (a `scan`, a `monitor`).

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -362,4 +363,62 @@ func TestTypesListOnlyIEC101(t *testing.T) {
 		}
 	}
 	_ = types.TypesResult{}
+}
+
+// --link-retries -1 asks for no repetition (go-iec60870-5 link.Config: negative means
+// none), 0 for the default; anything outside -1-255 is refused before the line is opened.
+func TestLinkRetries(t *testing.T) {
+	for _, c := range []struct {
+		retries, want int
+	}{{-1, -1}, {0, 0 /* link.DefaultRetries when the link starts */}, {5, 5}, {MaxLinkRetries, MaxLinkRetries}} {
+		cfg := config.DefaultLink()
+		cfg.LinkRetries = c.retries
+		l, err := LinkParams(cfg)
+		if err != nil {
+			t.Fatalf("--link-retries %d: %v", c.retries, err)
+		}
+		if l.Params.Link.Retries != c.want {
+			t.Errorf("--link-retries %d: retries %d, want %d", c.retries, l.Params.Link.Retries, c.want)
+		}
+	}
+	for _, r := range []int{-2, MaxLinkRetries + 1} {
+		cfg := config.DefaultLink()
+		cfg.LinkRetries = r
+		if _, err := LinkParams(cfg); err == nil || !strings.Contains(err.Error(), "--link-retries") {
+			t.Errorf("--link-retries %d: %v", r, err)
+		}
+	}
+}
+
+func TestTypeNames101(t *testing.T) {
+	names := TypeNames101()
+	if !slices.Contains(names, "M_SP_TB_1") || !slices.Contains(names, "C_TS_NA_1") {
+		t.Fatalf("missing IEC 101 types: %v", names)
+	}
+	for _, only104 := range []string{"C_SC_TA_1", "C_TS_TA_1", "C_SE_TC_1"} {
+		if slices.Contains(names, only104) {
+			t.Errorf("%s is not an IEC 101 type", only104)
+		}
+	}
+}
+
+// Parameter refuses link flags and a parameter that cannot be sent, and reports a line that
+// cannot be opened, without sending anything.
+func TestParameterErrors(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.ParameterConfig{StationConfig: config.StationConfig{ConnConfig: config.ConnConfig{LinkConfig: config.DefaultLink(), URL: "tcp://127.0.0.1:1", Timeout: 500}, CommonAddr: 1},
+		Type: "float", IOA: 1, Value: "1", Qualifier: "threshold"}
+	cfg.IOASize = 9
+	if _, err := Parameter(ctx, cfg, nil); err == nil {
+		t.Error("--ioa-size 9 was accepted")
+	}
+	cfg.IOASize = 1
+	cfg.IOA = 300 // more than one octet holds
+	if _, err := Parameter(ctx, cfg, nil); err == nil {
+		t.Error("IOA 300 with one-octet addresses was accepted")
+	}
+	cfg.IOA = 1
+	if _, err := Parameter(ctx, cfg, nil); err == nil {
+		t.Error("a line that does not listen answered")
+	}
 }

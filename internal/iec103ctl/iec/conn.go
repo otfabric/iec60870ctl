@@ -49,8 +49,8 @@ func CheckConn(cfg *config.ConnConfig) (line.Target, error) {
 	if cfg.CommonAddress > 255 {
 		return t, fmt.Errorf("--common-address %d: use 0-255", cfg.CommonAddress)
 	}
-	if cfg.Retries < 0 || cfg.Retries > MaxRetries {
-		return t, fmt.Errorf("--retries %d: use 0-%d", cfg.Retries, MaxRetries)
+	if cfg.Retries < -1 || cfg.Retries > MaxRetries {
+		return t, fmt.Errorf("--retries %d: use 0-%d (-1 or 0 = none)", cfg.Retries, MaxRetries)
 	}
 	if _, err := linecfg.Location(cfg.TimeZone); err != nil {
 		return t, err
@@ -95,7 +95,7 @@ func dialLine(ctx context.Context, cfg *config.ConnConfig, t line.Target) (io.Re
 // linkConfig returns the link layer configuration of cfg, with the frame trace.
 func linkConfig(cfg *config.ConnConfig, trace io.Writer) link.Config {
 	lc := link.Config{Timeout: Timeout(cfg.LinkTimeout, link.DefaultTimeout), Retries: cfg.Retries}
-	if cfg.Retries == 0 {
+	if cfg.Retries <= 0 {
 		lc.Retries = -1
 	}
 	if trace != nil {

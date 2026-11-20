@@ -131,6 +131,11 @@ func certPool(path string) (*x509.CertPool, error) {
 }
 
 // Session is a connection to a station, prepared from the configuration of a command.
+//
+// With --standby-url it is a redundancy group of IEC 60870-5-104 (clause 10, redundant
+// connections): Client is then the connection that has data transfer started once
+// [Session.Connect] has returned, and Target its address. A request goes out on that one
+// connection only; it is not sent again on another when that connection is lost.
 type Session struct {
 	*client.Client
 	Target  config.Target
@@ -139,12 +144,70 @@ type Session struct {
 	// Security is the endpoint of the application-layer security; nil without --secure.
 	Security *sec.Endpoint
 	events   *secEvents
+	// group is the redundancy group of --standby-url, nil without it; targets are the
+	// addresses of its connections, in the order of the group.
+	group   *client.Group
+	targets []config.Target
+}
+
+// Group returns the redundancy group of --standby-url, or nil without it.
+func (s *Session) Group() *client.Group { return s.group }
+
+// Targets returns the addresses of the connections of the session: the station, and the
+// standby connections of --standby-url.
+func (s *Session) Targets() []config.Target {
+	if s.group == nil {
+		return []config.Target{s.Target}
+	}
+	return append([]config.Target(nil), s.targets...)
+}
+
+// TargetOf returns the address of a connection of the session.
+func (s *Session) TargetOf(c *client.Client) (config.Target, bool) {
+	for _, t := range s.Targets() {
+		if c != nil && t.Addr() == c.Addr() {
+			return t, true
+		}
+	}
+	return config.Target{}, false
+}
+
+// Connect connects to the station and starts data transfer. With a redundancy group it
+// returns when one connection has data transfer started, which then is [Session.Client];
+// the others are established in the background as standbys.
+func (s *Session) Connect(ctx context.Context) error {
+	if s.group == nil {
+		return s.Client.Connect(ctx)
+	}
+	if err := s.group.Connect(ctx); err != nil {
+		return err
+	}
+	active := s.group.Active()
+	if active == nil {
+		return fmt.Errorf("%w: the active connection of the group was lost", iec104.ErrNotConnected)
+	}
+	s.Client = active
+	if t, ok := s.TargetOf(active); ok {
+		s.Target = t
+	}
+	return nil
+}
+
+// Close closes the connection, or every connection of the redundancy group.
+func (s *Session) Close() error {
+	if s.group != nil {
+		return s.group.Close()
+	}
+	return s.Client.Close()
 }
 
 // Validate checks everything about cfg that can be checked without connecting.
 func Validate(cfg *config.ConnConfig) error {
 	t, err := cfg.ResolveTarget()
 	if err != nil {
+		return err
+	}
+	if _, err := cfg.ResolveStandby(t); err != nil {
 		return err
 	}
 	if _, err := LinkParams(cfg.LinkConfig); err != nil {
@@ -185,6 +248,10 @@ func Open(cfg *config.ConnConfig, trace io.Writer, extra ...client.Option) (*Ses
 		}
 		return nil, errs.InvalidInput(errs.CodeInvalidURL, err.Error(), err)
 	}
+	standby, err := cfg.ResolveStandby(target)
+	if err != nil {
+		return nil, errs.InvalidInput(errs.CodeInvalidURL, err.Error(), err)
+	}
 	link, err := LinkParams(cfg.LinkConfig)
 	if err != nil {
 		return nil, errs.WrapValidation(err)
@@ -223,6 +290,19 @@ func Open(cfg *config.ConnConfig, trace io.Writer, extra ...client.Option) (*Ses
 			return nil, errs.WrapValidation(err)
 		}
 		opts = append(opts, client.WithSecurity(s.Security))
+	}
+	if len(standby) > 0 {
+		s.targets = append([]config.Target{target}, standby...)
+		addrs := make([]string, len(s.targets))
+		for i, t := range s.targets {
+			addrs[i] = t.Addr()
+		}
+		g, err := client.NewGroup(addrs, append(opts, extra...)...)
+		if err != nil {
+			return nil, errs.WrapValidation(err)
+		}
+		s.group, s.Client = g, g.Clients()[0]
+		return s, nil
 	}
 	c, err := client.New(target.Addr(), append(opts, extra...)...)
 	if err != nil {

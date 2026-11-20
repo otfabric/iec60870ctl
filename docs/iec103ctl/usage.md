@@ -43,8 +43,8 @@ An information object is addressed by a **function type** (FUN: 128 distance, 16
 | `--ip`, `--port` | 2401 | short form of a TCP line |
 | `--baud`, `--data-bits`, `--parity`, `--stop-bits` | 9600, 8, even, 1 | the serial character format (FT 1.2); ignored on a TCP line, but still validated |
 | `--link-address` | 1 | the device's link address, 0-254 |
-| `--common-address` | 0 = the link address | common address of ASDU, 1-255 |
-| `--link-timeout`, `--retries` | 1000 ms, 3 | how long a frame waits for its answer, and how often it is repeated |
+| `--common-address` (or `--ca`) | 0 = the link address | common address of ASDU, 1-255 |
+| `--link-timeout`, `--retries` (or `--link-retries`) | 1000 ms, 3 | how long a frame waits for its answer, and how often it is repeated: 0-10, -1 or 0 for none |
 | `--reset-fcb` | off | initialize the link with reset FCB (function 7) instead of reset CU (function 0), which empties the device's transmit buffers |
 | `--poll-interval` | 100 ms | pause between class 2 polls when the device has nothing to send |
 | `--timeout` | 10000 ms | connecting, the link start-up, and each request |
@@ -52,7 +52,7 @@ An information object is addressed by a **function type** (FUN: 128 distance, 16
 | `--format` | text | `text`, `json` or `table` ([json-output.md](json-output.md)) |
 | `--debug` | | every frame sent and received, decoded, on stderr |
 
-Every environment variable is the flag in upper case with `IEC103CTL_` in front (`IEC103CTL_URL`, `IEC103CTL_FORMAT`, ...); `--help` of each command names them.
+Every environment variable is the flag in upper case with `IEC103CTL_` in front (`IEC103CTL_URL`, `IEC103CTL_FORMAT`, ...); `--help` of each command names them. `--ca` and `--link-retries`, the names iec101ctl and iec102ctl give these flags, are accepted for `--common-address` and `--retries`; the variables keep the names of iec103ctl (`IEC103CTL_COMMON_ADDRESS`, `IEC103CTL_RETRIES`). With `--retries` -1 and 0 both mean no repetition, while iec101ctl and iec102ctl read `--link-retries 0` as their default 3: give -1 for none to every tool.
 
 Three flags decide what a request changes at the device and are taken **only from the command line**: `--broadcast` of `client clock` (every device on the line takes the time), `--time` of `client clock` other than `now`, and `--mode` of `client generic write`. When `IEC103CTL_BROADCAST` or `IEC103CTL_TIME` is set and the flag is not given, the variable is not used: `client clock` takes the built-in default (no broadcast, the time of sending) and says so on stderr before anything is sent, `notice: IEC103CTL_BROADCAST=true is not used: --broadcast is taken only from the command line`. When `IEC103CTL_WRITE_MODE` is set and `--mode` is not given, `client generic write` is refused before anything is sent (exit code 3, `invalid_flag_combination`: `IEC103CTL_WRITE_MODE=abort is not used: --mode is taken only from the command line; give --mode abort to run it so`), because its default, write with execution, would activate the value. Give `--mode` on the command line.
 
@@ -108,9 +108,12 @@ iec103ctl client generic read --url tcp://10.0.0.20 --inf 244 --items 1.2,1.3,1.
 iec103ctl client generic interrogate --url tcp://10.0.0.20 --format table
 iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.2 --type float32 --value 1.25
 iec103ctl client generic write --url tcp://10.0.0.20 --gin 1.3 --type uint --size 2 --value 450 --mode abort
+iec103ctl client generic write --url tcp://10.0.0.20 --data 1.2=float32:1.25 --data 1.3=uint/2:450
 ```
 
-`generic write` writes one data set: `--type` `ascii` (1), `uint` (3), `int` (4), `float32` (7) or `float64` (8), `--size` the octets of an integer (1-8; for `ascii` the length of the text), `--value`. `--mode execute` (default) is the write with execution (INF 250): cause 40 is success, cause 41 a refusal with a generic reply code per data set (exit code 6). `--mode abort` stages the value with write entry (INF 248) and drops it with write abort (INF 251): nothing is activated. The abort is also sent when the write entry fails, times out or is interrupted (Ctrl-C), with a `--timeout` of its own, because the link layer may still deliver the write entry; an abort the device does not answer within `--timeout` is sent once more. The error then says whether the abort was acknowledged or that the value may still be staged on the device. The write is sent exactly once; only the abort may be sent again.
+`generic write` writes one data set with `--gin`, `--kod`, `--type` `ascii` (1), `uint` (3), `int` (4), `float32` (7) or `float64` (8), `--size` the octets of an integer (1-8; for `ascii` the length of the text), `--value`. `--mode execute` (default) is the write with execution (INF 250): cause 40 is success, cause 41 a refusal with a generic reply code per data set (exit code 6). `--mode abort` stages the value with write entry (INF 248) and drops it with write abort (INF 251): nothing is activated. The abort is also sent when the write entry fails, times out or is interrupted (Ctrl-C), with a `--timeout` of its own, because the link layer may still deliver the write entry; an abort the device does not answer within `--timeout` is sent once more. The error then says whether the abort was acknowledged or that the value may still be staged on the device. The write is sent exactly once; only the abort may be sent again.
+
+Several data sets are written together with a repeated `--data GIN[:KOD]=TYPE[/SIZE]:VALUE` instead of `--gin`, `--type`, `--size` and `--value` (`uint` and `int` need `/SIZE`; the value is everything after the colon that follows the type, colons and commas included). The library sends them in as many ASDUs 10 as they need with one RII: every one but the last with write entry (INF 248, CONT set), the last with write with execution (INF 250), for the device to activate them together or refuse them (clause 7.4.8.6.3, figure 17; the procedure as go-iec60870-5 implements it, see its docs/iec103). With `--mode abort` every data set goes with write entry, and the write abort (INF 251) follows in an ASDU of its own. A write takes at most 64 data sets. `--data` is taken only from the command line, and cannot be combined with `--gin`, `--type`, `--size` or `--value` on it (exit code 3); the values those flags take from their environment variables are not used with `--data`. Without `--data`, `--gin`, `--type` and `--value` must be on the command line (exit code 2).
 
 ### client disturbance list, get
 
@@ -128,6 +131,17 @@ Polls the device and prints every ASDU it sends as it arrives (JSON Lines with `
 ```console
 iec103ctl client monitor --url tcp://10.0.0.20 --interrogate
 iec103ctl client monitor --url serial:///dev/ttyUSB0 --duration 60 --format json > events.jsonl
+iec103ctl client monitor --url tcp://10.0.0.20 --type time-tagged-message --fun 128 --cause spontaneous,12
+```
+
+`--type`, `--fun`, `--inf` and `--cause` show only the messages with these type identifications, function types, information numbers and causes of transmission: comma-separated numbers and ranges (`160-162`), types also by name (`client types`) and causes by their name in lower case with hyphens (`spontaneous`, `general-interrogation`, `remote-operation`; shell completion lists them). A message must pass every filter given, and `--count` counts the messages shown. Their variables are `IEC103CTL_MONITOR_TYPES`, `IEC103CTL_MONITOR_FUN`, `IEC103CTL_MONITOR_INF` and `IEC103CTL_MONITOR_CAUSE`, so that a list in them does not reach `--fun` and `--inf` of the other commands.
+
+### client types
+
+Lists the type identifications of tables 3 and 4 (clause 7.2.1) with number, name, direction and description; `--direction monitor` or `control` lists those of one direction, and types 6 and 10, which exist in both, with either. No connection is made.
+
+```console
+iec103ctl client types --direction control --format table
 ```
 
 ### client scan

@@ -34,7 +34,10 @@ type MonitorSummary struct {
 	Values     int
 	ByType     map[string]int
 	Reconnects int
-	Duration   time.Duration
+	// Switchovers counts how often another connection of the redundancy group of
+	// --standby-url took over data transfer.
+	Switchovers int
+	Duration    time.Duration
 }
 
 func (s MonitorSummary) String() string {
@@ -50,6 +53,9 @@ func (s MonitorSummary) String() string {
 	out := fmt.Sprintf("--- %s: %d values in %s", s.Target, s.Values, s.Duration.Round(time.Millisecond))
 	if s.Reconnects > 0 {
 		out += fmt.Sprintf(", %d reconnects", s.Reconnects)
+	}
+	if s.Switchovers > 0 {
+		out += fmt.Sprintf(", %d switchovers", s.Switchovers)
 	}
 	if len(parts) > 0 {
 		out += " (" + strings.Join(parts, " ") + ")"
@@ -111,6 +117,20 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		cfg.CommonAddrHint = uint16(ca)
 	}
 
+	// With --standby-url the connections form a redundancy group: the group reconnects
+	// every connection, and a switchover is not a reconnect.
+	names := map[string]string{} // host:port of each connection of the group → its URL
+	if t, terr := cfg.ResolveTarget(); terr == nil {
+		standby, _ := cfg.ResolveStandby(t)
+		for _, c := range append([]config.Target{t}, standby...) {
+			names[c.Addr()] = c.String()
+		}
+		if len(standby) == 0 {
+			names = nil
+		}
+	}
+	grouped := len(names) > 0
+
 	parent := ctx
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -125,7 +145,11 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 		emitErr  error
 		lost     = make(chan error, 1)
 		started  int
-		statusMu sync.Mutex
+		switches int // calls of the switch handler with a connection
+		// interrogations are the general interrogations of --interrogate on the connections
+		// of a group that took over.
+		interrogations sync.WaitGroup
+		statusMu       sync.Mutex
 	)
 	say := func(format string, args ...any) {
 		statusMu.Lock()
@@ -168,14 +192,14 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 			case st == iec104.StateStarted:
 				mu.Lock()
 				started++
-				if started > 1 {
+				if started > 1 && !grouped {
 					sum.Reconnects++
 				}
 				mu.Unlock()
 				say("monitor: data transfer started")
 			case err != nil && ctx.Err() == nil:
 				say("monitor: %s: %v", st, err)
-				if cfg.NoReconnect && st == iec104.StateDisconnected {
+				if cfg.NoReconnect && !grouped && st == iec104.StateDisconnected {
 					select {
 					case lost <- err:
 					default:
@@ -184,15 +208,54 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 			}
 		}),
 	}
-	if !cfg.NoReconnect {
+	if !cfg.NoReconnect || grouped {
 		opts = append(opts, client.WithReconnect(monitorReconnect))
 	}
-	if cfg.Interrogate {
-		opts = append(opts, client.WithStartHandler(func(sctx context.Context, c *client.Client) {
-			if _, err := c.Interrogate(sctx, ca, asdu.QOIStation); err != nil && sctx.Err() == nil {
-				say("monitor: general interrogation failed: %v", err)
+	interrogate := func(ictx context.Context, c *client.Client) {
+		if _, err := c.Interrogate(ictx, ca, asdu.QOIStation); err != nil && ictx.Err() == nil {
+			say("monitor: general interrogation failed: %v", err)
+		}
+	}
+	if grouped {
+		// IEC 60870-5-104 clause 10: one connection of the group has data transfer
+		// started; when it is lost, another one takes over.
+		opts = append(opts, client.WithSwitchHandler(func(active *client.Client) {
+			if ctx.Err() != nil {
+				return
+			}
+			if active == nil {
+				say("monitor: switchover: no connection of the redundancy group is available")
+				if cfg.NoReconnect {
+					select {
+					case lost <- fmt.Errorf("%w: no connection of the redundancy group has data transfer started", iec104.ErrConnectionLost):
+					default:
+					}
+				}
+				return
+			}
+			mu.Lock()
+			switches++
+			first := switches == 1
+			if !first {
+				sum.Switchovers++
+			}
+			mu.Unlock()
+			if !first {
+				say("monitor: switchover: data transfer on %s", names[active.Addr()])
+			}
+			if cfg.Interrogate {
+				// A group starts data transfer itself, without the start handler of a
+				// connection: interrogate the one that took over, outside the handler.
+				interrogations.Add(1)
+				go func() {
+					defer interrogations.Done()
+					interrogate(ctx, active)
+				}()
 			}
 		}))
+	}
+	if cfg.Interrogate && !grouped {
+		opts = append(opts, client.WithStartHandler(func(sctx context.Context, c *client.Client) { interrogate(sctx, c) }))
 	}
 
 	s, err := monitorDial(ctx, &cfg.ConnConfig, status, opts...)
@@ -223,7 +286,9 @@ func Monitor(ctx context.Context, cfg *config.MonitorConfig, status io.Writer, e
 	case err := <-lost:
 		fatal = WrapError(err)
 	}
+	stop()
 	_ = s.Close()
+	interrogations.Wait()
 	sum.Duration = time.Since(begin)
 
 	mu.Lock()

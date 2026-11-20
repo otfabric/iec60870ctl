@@ -22,8 +22,15 @@ func TestStartServesTheModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = c.Close()
-	if s.HasEvent("nothing") || len(s.Events()) != 0 {
-		t.Fatalf("events %v", s.Events())
+	// The line's state change ("link", closed) is logged from the line's own goroutine and
+	// may already be there; nothing else is, since nothing was sent.
+	for _, e := range s.Events() {
+		if e.Event != "link" {
+			t.Fatalf("events %v", s.Events())
+		}
+	}
+	if s.HasEvent("nothing") {
+		t.Fatal("HasEvent reported an event that was not logged")
 	}
 }
 

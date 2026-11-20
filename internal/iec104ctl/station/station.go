@@ -44,6 +44,9 @@ type Options struct {
 	Metrics iec104.Metrics
 	// Now is the clock of the station; time.Now when nil.
 	Now func() time.Time
+	// Redundancy, when it declares groups or an event queue, replaces the redundancy section
+	// of the model (the flags of `server start`); the zero value keeps the model's.
+	Redundancy RedundancySpec
 	// Security, when not nil, applies the application-layer security of IEC 62351-5:
 	// every controlling station associates with this identity and trust and has these
 	// roles.
@@ -80,12 +83,22 @@ type file struct {
 	at   time.Time
 }
 
+// group is a redundancy group of the station, with its addresses parsed.
+type group struct {
+	name  string
+	allow []netip.Prefix // empty: every address
+}
+
 // Station is a simulated controlled station.
 type Station struct {
 	model *Model
 	opts  Options
 	ca    asdu.CommonAddr
 	srv   *server.Server
+	// groups are the redundancy groups the station declares, nil for none; queue is the
+	// size of the event queue of each group.
+	groups []group
+	queue  int
 
 	mu       sync.Mutex
 	points   map[asdu.IOA]*point
@@ -158,6 +171,32 @@ func New(m *Model, opts Options) (*Station, error) {
 		}
 		st.files[asdu.IOA(spec.IOA)] = &file{ioa: asdu.IOA(spec.IOA), name: spec.Name, data: server.NewFile(data, sectionSize(spec)), at: started}
 	}
+	red := m.Redundancy
+	if len(opts.Redundancy.Groups) > 0 {
+		red.Groups = opts.Redundancy.Groups
+	}
+	if opts.Redundancy.EventQueue != 0 {
+		red.EventQueue = opts.Redundancy.EventQueue
+	}
+	var problems []string
+	red.validate(func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) })
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("redundancy: %s", strings.Join(problems, "; "))
+	}
+	st.queue = red.EventQueue
+	if st.queue == 0 {
+		st.queue = DefaultEventQueue
+	}
+	var groups []server.RedundancyGroup
+	for _, g := range red.Groups {
+		sg := group{name: g.Name}
+		for _, a := range g.Allow {
+			p, _ := ParsePrefix(a) // validated
+			sg.allow = append(sg.allow, p)
+		}
+		st.groups = append(st.groups, sg)
+		groups = append(groups, server.RedundancyGroup{Name: g.Name, Allow: g.Allow})
+	}
 	if dir := m.Uploads.Dir; dir != "" {
 		if err := os.MkdirAll(m.resolve(dir), 0o750); err != nil {
 			return nil, fmt.Errorf("uploads.dir: %w", err)
@@ -171,6 +210,7 @@ func New(m *Model, opts Options) (*Station, error) {
 	mux.HandleFunc(asdu.C_CS_NA_1, st.clockSync)
 	mux.HandleFunc(asdu.C_TS_TA_1, st.testCommand)
 	mux.HandleFunc(asdu.C_RP_NA_1, st.resetProcess)
+	mux.Handle(server.HandlerFunc(st.parameter), asdu.P_ME_NA_1, asdu.P_ME_NB_1, asdu.P_ME_NC_1, asdu.P_AC_NA_1)
 	mux.Handle(server.HandlerFunc(st.command), server.ProcessCommands...)
 	fs := server.NewFileServer(server.FileSourceFunc(st.openFile))
 	fs.Directory = st.directory
@@ -189,6 +229,12 @@ func New(m *Model, opts Options) (*Station, error) {
 	}
 	if opts.MaxSessions > 0 {
 		sopts = append(sopts, server.WithMaxSessions(opts.MaxSessions))
+	}
+	sopts = append(sopts, server.WithEventQueue(st.queue))
+	if len(groups) > 0 {
+		// IEC 60870-5-104 clause 10: the connections of a group are redundant; one of them
+		// has data transfer started at a time.
+		sopts = append(sopts, server.WithRedundancyGroups(groups...))
 	}
 	if opts.Metrics != nil {
 		sopts = append(sopts, server.WithMetrics(opts.Metrics))
@@ -236,6 +282,16 @@ func (st *Station) Serve(ln net.Listener) error {
 		ln.Addr(), st.ca, st.name(), len(st.points), len(st.commands), len(st.files))
 	if s := st.opts.Security; s != nil {
 		detail += fmt.Sprintf(", secure (AIS %d)", s.ID)
+	}
+	if len(st.groups) > 0 {
+		names := make([]string, len(st.groups))
+		for i, g := range st.groups {
+			names[i] = g.name
+		}
+		detail += fmt.Sprintf(", redundancy groups %s", strings.Join(names, ", "))
+	}
+	if st.queue != DefaultEventQueue {
+		detail += fmt.Sprintf(", event queue %d", st.queue)
 	}
 	st.event(types.ServerEvent{Event: "listening", Detail: detail})
 	err := st.srv.Serve(ln)
@@ -293,26 +349,50 @@ func remote(s *server.Session) string {
 }
 
 func (st *Station) accept(addr net.Addr) bool {
-	if len(st.opts.Allow) == 0 {
+	if !allows(st.opts.Allow, addr) {
+		st.event(types.ServerEvent{Event: "refused", Remote: addr.String(), Detail: "address not allowed"})
+		return false
+	}
+	if len(st.groups) == 0 {
+		return true
+	}
+	for _, g := range st.groups {
+		if allows(g.allow, addr) {
+			return true
+		}
+	}
+	// The library would close it too; refusing it here puts it in the event log.
+	st.event(types.ServerEvent{Event: "refused", Remote: addr.String(), Detail: "no redundancy group allows the address"})
+	return false
+}
+
+// allows reports whether addr is in one of prefixes; every address is when there are none.
+func allows(prefixes []netip.Prefix, addr net.Addr) bool {
+	if len(prefixes) == 0 {
 		return true
 	}
 	tcp, ok := addr.(*net.TCPAddr)
-	if ok {
-		if ip, ok := netip.AddrFromSlice(tcp.IP); ok {
-			ip = ip.Unmap()
-			for _, p := range st.opts.Allow {
-				if p.Contains(ip) {
-					return true
-				}
-			}
+	if !ok {
+		return false
+	}
+	ip, ok := netip.AddrFromSlice(tcp.IP)
+	if !ok {
+		return false
+	}
+	ip = ip.Unmap()
+	for _, p := range prefixes {
+		if p.Contains(ip) {
+			return true
 		}
 	}
-	st.event(types.ServerEvent{Event: "refused", Remote: addr.String(), Detail: "address not allowed"})
 	return false
 }
 
 func (st *Station) sessionState(s *server.Session, state iec104.State, err error) {
 	e := types.ServerEvent{Remote: remote(s)}
+	if len(st.groups) > 0 && s != nil {
+		e.Group = s.Group()
+	}
 	switch state {
 	case iec104.StateStopped:
 		// The first notification of a session announces it.
@@ -558,6 +638,11 @@ func (st *Station) resetProcess(s *server.Session, req *asdu.ASDU) {
 		return
 	}
 	detail := "pending events"
+	if q == asdu.ResetPendingEvents {
+		// The events with a time tag that no controlling station has been sent yet go
+		// (IEC 60870-5-101:2003 7.2.6.27, QRP 2); one sent and not yet acknowledged stays.
+		detail = fmt.Sprintf("pending events: %d with time tag cleared", st.clearPendingEvents())
+	}
 	if q == asdu.ResetProcessGeneral {
 		// The values are back before the confirmation: whoever acts on it sees them.
 		detail = "process: values back to the model"
@@ -573,6 +658,108 @@ func (st *Station) resetProcess(s *server.Session, req *asdu.ASDU) {
 		_ = st.srv.Enqueue(asdu.New(asdu.CauseInitialized, st.ca, asdu.EndOfInitialization{Cause: asdu.InitRemoteReset}))
 	}
 	st.event(types.ServerEvent{Event: "reset", Remote: remote(s), CommonAddr: uint16(st.ca), Detail: detail})
+}
+
+// clearPendingEvents removes the queued events with a time tag that no controlling station
+// has been sent, in every redundancy group, and returns how many (QRP 2). The events without
+// a time tag, and those sent and not yet acknowledged, stay.
+func (st *Station) clearPendingEvents() int { return st.srv.ClearEvents("", true) }
+
+// parameter loads a parameter of measured value or activates parameters (IEC
+// 60870-5-104:2000 7.9; IEC 60870-5-101:2003 7.4.9, 7.4.10). The station takes a parameter
+// of measured value for any measured value of its model, whatever its representation, and
+// confirms it; it keeps no parameter and does not apply it to the simulation. The
+// previously loaded parameters are activated at address 0, the parameter or the cyclic
+// transmission of an object at the address of a point. Anything else is refused.
+func (st *Station) parameter(s *server.Session, req *asdu.ASDU) {
+	req = st.own(req)
+	obj := req.First()
+	ioa := obj.Address()
+	e := types.ServerEvent{Event: "parameter", Remote: remote(s), CommonAddr: uint16(st.ca), IOA: uint32(ioa), Type: req.Type.String()}
+	refuse := func(why string, reject asdu.Cause) {
+		if reject != 0 {
+			_ = s.Reject(req, reject)
+		} else {
+			_ = s.Negative(req)
+		}
+		e.Detail = "refused: " + why
+		st.event(e)
+	}
+	if req.Cause != asdu.CauseActivation {
+		refuse("only activation", 0)
+		return
+	}
+	st.mu.Lock()
+	p := st.points[ioa]
+	st.mu.Unlock()
+
+	if a, ok := obj.(asdu.ParameterActivation); ok {
+		switch {
+		case a.Qualifier == asdu.ActivateLoadedParameters && ioa == 0:
+			e.Detail = "activated: loaded parameters"
+		case (a.Qualifier == asdu.ActivateObjectParameter || a.Qualifier == asdu.ActivateCyclic) && p != nil:
+			e.Detail = "activated: object parameter"
+			if a.Qualifier == asdu.ActivateCyclic {
+				e.Detail = "activated: cyclic transmission"
+			}
+		case a.Qualifier < asdu.ActivateLoadedParameters || a.Qualifier > asdu.ActivateCyclic:
+			refuse(fmt.Sprintf("qualifier of parameter activation %d", a.Qualifier), 0)
+			return
+		case ioa == 0:
+			refuse("the object is required", asdu.CauseUnknownIOA)
+			return
+		case p == nil:
+			refuse("unknown information object address", asdu.CauseUnknownIOA)
+			return
+		default:
+			refuse("the loaded parameters are activated at address 0", 0)
+			return
+		}
+		_ = s.Confirm(req)
+		st.event(e)
+		return
+	}
+
+	if p == nil {
+		refuse("unknown information object address", asdu.CauseUnknownIOA)
+		return
+	}
+	if !strings.HasPrefix(p.typ.String(), "M_ME_") {
+		refuse(fmt.Sprintf("the object is %s, not a measured value", p.typ), 0)
+		return
+	}
+	var v any
+	var q uint8
+	switch o := obj.(type) {
+	case asdu.ParameterNormalized:
+		v, q = o.Value.Float64(), o.Qualifier
+	case asdu.ParameterScaled:
+		v, q = int(o.Value), o.Qualifier
+	case asdu.ParameterFloat:
+		v, q = o.Value, o.Qualifier
+	}
+	e.Value, e.NonFinite = format.Finite(v)
+	kind, ok := parameterKinds[q&0x3f]
+	if !ok {
+		refuse(fmt.Sprintf("kind of parameter %d", q&0x3f), 0)
+		return
+	}
+	if e.NonFinite != "" {
+		refuse("the value is not a finite number", 0)
+		return
+	}
+	e.Detail = "loaded: " + kind
+	_ = s.Confirm(req)
+	st.event(e)
+}
+
+// parameterKinds names the kinds of parameter of measured value (KPA,
+// IEC 60870-5-101:2003 7.2.6.24).
+var parameterKinds = map[uint8]string{
+	asdu.ParameterThreshold: "threshold",
+	asdu.ParameterSmoothing: "smoothing",
+	asdu.ParameterLowLimit:  "low-limit",
+	asdu.ParameterHighLimit: "high-limit",
 }
 
 // tag returns the time tag of an event of p: the station's time, or none.

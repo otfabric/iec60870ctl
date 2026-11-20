@@ -125,6 +125,27 @@ var typeNames = func() map[string]iec102.TypeID {
 	}
 }()
 
+// TypeNames returns the mnemonics of the standard and REE types, sorted by number.
+func TypeNames() []string {
+	return typeNamesWhere(func(iec102.TypeID) bool { return true })
+}
+
+// ReadTypeNames returns the mnemonics of the reads of integrated totals that --type of
+// `client read` takes (C_CI_NA_2 .. C_CI_NU_2), sorted by number.
+func ReadTypeNames() []string {
+	return typeNamesWhere(func(t iec102.TypeID) bool { return t.Selection() != iec102.SelectNone })
+}
+
+func typeNamesWhere(keep func(iec102.TypeID) bool) []string {
+	var out []string
+	for t := 0; t < 256; t++ {
+		if n := TypeName(iec102.TypeID(t)); typeNames[n] == iec102.TypeID(t) && keep(iec102.TypeID(t)) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // ParseTypeID parses a type identification: a mnemonic (C_RM_NA_2, standard or REE) or a
 // number 0-255.
 func ParseTypeID(s string) (iec102.TypeID, error) {

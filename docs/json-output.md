@@ -25,7 +25,10 @@ a field name or shape is called out in [RELEASE.md](../RELEASE.md).
   ```
 
   `kind` decides the exit code, `code` is stable for machines, `message` is for people.
-  The values are listed in [exitcodes.md](exitcodes.md).
+  The values are listed in [exitcodes.md](exitcodes.md). This holds also for an error
+  found before the command runs: an unknown flag, a missing required flag, or an
+  environment variable that does not parse is one JSON object on stdout when the command
+  line has `--format json` (or `--format=json`) or `<TOOL>_FORMAT=json` is set.
 
 ## Per tool
 

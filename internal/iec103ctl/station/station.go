@@ -100,12 +100,16 @@ func gin(g GINDef) iec103.GIN {
 
 func u8p(v int) *uint8 { b := uint8(v & 0xFF); return &b }
 
+// timeLayout is how the events write a time: RFC 3339 in UTC with milliseconds, as the
+// events of iec101ctl and iec104ctl.
+const timeLayout = "2006-01-02T15:04:05.000Z07:00"
+
 // event logs e with the current time.
 func (s *Station) event(e types.ServerEvent) {
 	if s.opts.Log == nil {
 		return
 	}
-	e.Timestamp = time.Now().Format(time.RFC3339Nano)
+	e.Timestamp = time.Now().UTC().Format(timeLayout)
 	s.opts.Log(e)
 }
 
@@ -148,7 +152,7 @@ func (s *Station) config(c *session, remote string) server.Config {
 		Location:       s.opts.Location,
 		SyncDelay:      -1,
 		OnTimeSync: func(t time.Time, broadcast bool) {
-			s.event(types.ServerEvent{Event: "clock-sync", Remote: remote, Value: t.In(loc(s.opts.Location)).Format(time.RFC3339Nano), Detail: fmt.Sprintf("broadcast=%t", broadcast)})
+			s.event(types.ServerEvent{Event: "clock-sync", Remote: remote, Value: t.UTC().Format(timeLayout), Detail: fmt.Sprintf("broadcast=%t", broadcast)})
 		},
 		OnState: func(st iec103.State, err error) {
 			d := st.String()

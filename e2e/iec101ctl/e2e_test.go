@@ -80,12 +80,14 @@ func TestUnknownCommandIsAUsageError(t *testing.T) {
 const station asdu.CommonAddr = 7
 
 // handler is a small controlled station: two points, a counter, a select-before-operate
-// single command at 500 that drives point 100, clock, delay, test and reset.
+// single command at 500 that drives point 100, clock, delay, test, reset and parameters of
+// the measured value at 200 (P_ME_NC_1), which it records.
 type handler struct {
 	mu       sync.Mutex
 	point    bool
 	selected bool
 	commands int
+	params   []asdu.ParameterFloat
 }
 
 func (h *handler) HandleASDU(s *server.Server, a *asdu.ASDU) {
@@ -138,6 +140,13 @@ func (h *handler) HandleASDU(s *server.Server, a *asdu.ASDU) {
 			r.Objects = []asdu.InformationObject{asdu.DelayAcquisition{Delay: (o.Delay + 5) % 60000}}
 			_ = s.Send(r)
 		}
+	case asdu.ParameterFloat:
+		if o.IOA != 200 {
+			_ = s.Reject(a, asdu.CauseUnknownIOA)
+			return
+		}
+		h.params = append(h.params, o)
+		_ = s.Confirm(a)
 	case asdu.ClockSync, asdu.TestCommand, asdu.ResetProcess:
 		_ = s.Confirm(a)
 	default:
@@ -246,6 +255,18 @@ func TestClientAgainstLibraryServer(t *testing.T) {
 			if out, _, code := cli("monitor", "--interrogate", "--count", "2", "--format", "json"); code != 0 || strings.Count(out, "\n") != 2 {
 				t.Errorf("monitor: exit %d %s", code, out)
 			}
+			if out, errOut, code := cli("parameter", "--type", "float", "--ioa", "200", "--value", "2.5", "--qualifier", "high-limit", "--format", "json"); code != 0 || !strings.Contains(out, `"high-limit"`) {
+				t.Errorf("parameter: exit %d %s %s", code, out, errOut)
+			}
+			if _, errOut, code := cli("parameter", "--type", "float", "--ioa", "201", "--value", "2.5", "--qualifier", "high-limit"); code != 6 {
+				t.Errorf("parameter to an unknown address: exit %d %s", code, errOut)
+			}
+			h.mu.Lock()
+			// IEC 60870-5-101:2003 7.2.6.24: KPA 4 is the high limit for transmission.
+			if len(h.params) != 1 || h.params[0].Value != 2.5 || h.params[0].Qualifier&0x3f != 4 {
+				t.Errorf("the station saw %+v, want one high limit of 2.5", h.params)
+			}
+			h.mu.Unlock()
 		})
 	}
 }

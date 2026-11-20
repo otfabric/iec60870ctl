@@ -320,6 +320,8 @@ func (c *conn) HandleASDU(s *server.Server, req *asdu.ASDU) {
 		c.testCommand(s, req)
 	case asdu.ResetProcess:
 		c.resetProcess(s, req, o)
+	case asdu.ParameterNormalized, asdu.ParameterScaled, asdu.ParameterFloat, asdu.ParameterActivation:
+		c.parameter(s, req)
 	default:
 		if _, ok := commandTypes[req.Type.String()]; ok && req.First() != nil {
 			c.command(s, req)
@@ -600,6 +602,109 @@ func (c *conn) resetProcess(s *server.Server, req *asdu.ASDU, o asdu.ResetProces
 		_ = s.Send(asdu.New(asdu.CauseInitialized, st.ca, asdu.EndOfInitialization{Cause: asdu.InitRemoteReset}))
 	}
 	st.event(c.ev("reset", detail))
+}
+
+// parameter loads a parameter of measured value or activates parameters (IEC
+// 60870-5-101:2003 7.4.9, 7.4.10). The station takes a parameter of measured value for any
+// measured value of its model, whatever its representation, and confirms it; it keeps no
+// parameter and does not apply it to the simulation. The previously loaded parameters are
+// activated at address 0, the parameter or the cyclic transmission of an object at the
+// address of a point. Anything else is refused.
+func (c *conn) parameter(s *server.Server, req *asdu.ASDU) {
+	st := c.st
+	req = st.own(req)
+	obj := req.First()
+	ioa := obj.Address()
+	e := types.ServerEvent{Event: "parameter", Remote: c.remote, CommonAddr: uint16(st.ca), IOA: uint32(ioa), Type: req.Type.String()}
+	refuse := func(why string, reject asdu.Cause) {
+		if reject != 0 {
+			_ = s.Reject(req, reject)
+		} else {
+			_ = s.Negative(req)
+		}
+		e.Detail = "refused: " + why
+		st.event(e)
+	}
+	a, activation := obj.(asdu.ParameterActivation)
+	switch {
+	case req.Cause == asdu.CauseActivation:
+	case activation && req.Cause == asdu.CauseDeactivation:
+		// 7.2.3 allows the deactivation of a parameter activation; this station takes
+		// activations only.
+		refuse("only activation", 0)
+		return
+	default:
+		refuse("cause "+req.Cause.String(), asdu.CauseUnknownCause)
+		return
+	}
+	st.mu.Lock()
+	p := st.points[ioa]
+	st.mu.Unlock()
+
+	if activation {
+		switch {
+		case a.Qualifier == asdu.ActivateLoadedParameters && ioa == 0:
+			e.Detail = "activated: loaded parameters"
+		case (a.Qualifier == asdu.ActivateObjectParameter || a.Qualifier == asdu.ActivateCyclic) && p != nil:
+			e.Detail = "activated: object parameter"
+			if a.Qualifier == asdu.ActivateCyclic {
+				e.Detail = "activated: cyclic transmission"
+			}
+		case a.Qualifier < asdu.ActivateLoadedParameters || a.Qualifier > asdu.ActivateCyclic:
+			refuse(fmt.Sprintf("qualifier of parameter activation %d", a.Qualifier), 0)
+			return
+		case ioa == 0 || p == nil:
+			refuse("unknown information object address", asdu.CauseUnknownIOA)
+			return
+		default:
+			refuse("the loaded parameters are activated at address 0", 0)
+			return
+		}
+		_ = s.Confirm(req)
+		st.event(e)
+		return
+	}
+
+	if p == nil {
+		refuse("unknown information object address", asdu.CauseUnknownIOA)
+		return
+	}
+	if !strings.HasPrefix(p.typ.String(), "M_ME_") {
+		refuse(fmt.Sprintf("the object is %s, not a measured value", p.typ), 0)
+		return
+	}
+	var v any
+	var q uint8
+	switch o := obj.(type) {
+	case asdu.ParameterNormalized:
+		v, q = o.Value.Float64(), o.Qualifier
+	case asdu.ParameterScaled:
+		v, q = int(o.Value), o.Qualifier
+	case asdu.ParameterFloat:
+		v, q = o.Value, o.Qualifier
+	}
+	e.Value, e.NonFinite = format.Finite(v)
+	kind, ok := parameterKinds[q&0x3f]
+	if !ok {
+		refuse(fmt.Sprintf("kind of parameter %d", q&0x3f), 0)
+		return
+	}
+	if e.NonFinite != "" {
+		refuse("the value is not a finite number", 0)
+		return
+	}
+	e.Detail = "loaded: " + kind
+	_ = s.Confirm(req)
+	st.event(e)
+}
+
+// parameterKinds names the kinds of parameter of measured value (KPA,
+// IEC 60870-5-101:2003 7.2.6.24).
+var parameterKinds = map[uint8]string{
+	asdu.ParameterThreshold: "threshold",
+	asdu.ParameterSmoothing: "smoothing",
+	asdu.ParameterLowLimit:  "low-limit",
+	asdu.ParameterHighLimit: "high-limit",
 }
 
 // tag returns the time tag of an event of p: the station's time, or none.
